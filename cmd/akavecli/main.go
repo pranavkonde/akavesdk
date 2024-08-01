@@ -173,8 +173,9 @@ func main() {
 	defer unreg()
 
 	var eg errgroup.Group
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	ctx := context.Background()
 	eg.Go(func() error {
 		collector.Run(ctx)
 		return nil
@@ -187,6 +188,7 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		rootCmd.PrintErrf("failed to execute root cmd: %v", err)
 	}
+	cancel()
 
 	err := eg.Wait()
 	if err != nil {
