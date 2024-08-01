@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+option go_package = "akave.ai/akave/private/pb";
+
+import "google/protobuf/timestamp.proto";
+
+package nodeapi;
+
+service NodeAPI {
+  // Bucket APIs.
+  rpc BucketCreate (BucketCreateRequest) returns (BucketCreateResponse) {}
+  rpc BucketView (BucketViewRequest) returns (BucketViewResponse) {}
+  rpc BucketList (BucketListRequest) returns (BucketListResponse) {}
+  rpc BucketDelete (BucketDeleteRequest) returns (BucketDeleteResponse) {}
+  // File APIs.
+  rpc FileUploadCreate (FileUploadCreateRequest) returns (FileUploadCreateResponse) {}
+  rpc FileUpload (FileUploadRequest) returns (FileUploadResponse) {}
+  rpc FileUploadChunk (stream FileChunkData) returns (FileUploadChunkResponse) {}
+  rpc FileView (FileViewRequest) returns (FileViewResponse) {}
+  rpc FileDownloadCreate (FileDownloadCreateRequest) returns (FileDownloadCreateResponse) {}
+  rpc FileDownloadCreateV2 (FileDownloadCreateV2Request) returns (FileDownloadCreateV2Response) {}
+  rpc FileDownload (FileDownloadRequest) returns (FileDownloadResponse) {}
+  rpc FileDownloadChunk (FileDownloadChunkRequest) returns (stream FileChunkData) {}
+  rpc FileList (FileListRequest) returns (FileListResponse) {}
+  rpc FileKeys (FileKeysRequest) returns (FileKeysResponse) {}
+  rpc FileUpdateCreate (FileUpdateCreateRequest) returns (FileUpdateCreateResponse) {}
+  rpc FileDelete (FileDeleteRequest) returns (FileDeleteResponse) {}
+}
+
+message BucketCreateRequest {
+  string name = 1;
+}
+
+message BucketCreateResponse {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+}
+
+message BucketViewRequest {
+  string bucket_name = 1;
+}
+message BucketViewResponse {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message BucketListRequest {}
+message BucketListResponse {
+  repeated Bucket buckets = 1;
+
+  message Bucket {
+    string id = 1;
+    string name = 2;
+    google.protobuf.Timestamp created_at = 3;
+  }
+}
+
+message BucketDeleteRequest {}
+message BucketDeleteResponse {}
+
+message FileUploadRequest {}
+message FileUploadResponse {}
+
+message FileUploadCreateRequest {
+  string bucket_name = 1;
+  string root_cid = 2;
+  repeated Chunk chunks = 3;
+  string name = 4;
+  int64 size = 5;
+
+  message Chunk {
+    string cid = 1;
+    uint64 size = 2;
+  }
+}
+
+message FileUploadCreateResponse {
+  repeated ChunkUpload chunk_uploads = 1;
+
+  message ChunkUpload {
+    string cid = 1;
+    uint64 size = 2;
+    string node_address = 3;
+    string node_id = 4;
+    string permit = 5;
+  }
+}
+
+message FileChunkData {
+  bytes data = 1;
+  string chunk_cid = 2;
+}
+
+message FileUploadChunkResponse {}
+
+message FileViewRequest {
+  string bucket_name = 1;
+  string file_name = 2;
+}
+message FileViewResponse {
+  string root_cid = 1;
+  string name = 2;
+  int64 size = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message FileDownloadRequest {}
+message FileDownloadResponse {}
+
+message FileDownloadCreateRequest {
+  string bucket_name = 1;
+  string root_cid = 2;
+}
+
+message FileDownloadCreateResponse {
+  repeated ChunkDownload chunks = 1;
+
+  message ChunkDownload {
+    string cid = 1;
+    uint64 size = 2;
+    string node_address = 3;
+    string node_id = 4;
+    string permit = 5;
+  }
+}
+
+message FileDownloadCreateV2Request {
+  string bucket_name = 1;
+  string file_name = 2;
+}
+
+message FileDownloadCreateV2Response {
+  repeated ChunkDownload chunks = 1;
+
+  message ChunkDownload {
+    string cid = 1;
+    uint64 size = 2;
+    string node_address = 3;
+    string node_id = 4;
+    string permit = 5;
+  }
+}
+
+message FileDownloadChunkRequest {
+  string chunk_cid = 1;
+}
+
+message FileDownloadChunkResponse {}
+
+message FileListRequest {
+  string bucket_name = 1;
+}
+
+message FileListResponse {
+  repeated File list = 1;
+
+  message File {
+    string root_cid = 1;
+    string name = 2;
+    int64 size = 3;
+    google.protobuf.Timestamp created_at = 4;
+  }
+}
+
+message FileKeysRequest {}
+message FileKeysResponse {}
+message FileUpdateCreateRequest {}
+message FileUpdateCreateResponse {}
+message FileDeleteRequest {}
+message FileDeleteResponse {}
