@@ -35,22 +35,11 @@ copyright_fix: # for local usage
 .PHONY: fix
 fix: lint_fix copyright_fix
 
-.PHONY: gen
-gen: # for local usage
-	@go generate ./...
-
 .PHONY: clean
 clean: # for local usage
 	@rm -rf bin/*
-	@rm -rf private/pb/*.pb.go
-
-.PHONY:	up
-up:
-	docker compose up -d
 
 .PHONY: install_tools
 install_tools: # for local usage
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.56.2
 	@go install github.com/fernandrone/linelint@0.0.6
-	@go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
-	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0
