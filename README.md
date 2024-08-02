@@ -1,3 +1,3 @@
 # akavesdk
 
-Base commit: 0f5686f7b1aa3b3553efdeb9833023abd38d8f3f
+Base commit: 5544c3ea65cebbcc99c3ff565e48b47356061b30

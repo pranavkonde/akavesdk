@@ -95,6 +95,9 @@ func (sdk *SDK) ViewBucket(ctx context.Context, bucketName string) (_ Bucket, er
 	res, err := sdk.client.BucketView(ctx, &pb.BucketViewRequest{
 		BucketName: bucketName,
 	})
+	if err != nil {
+		return Bucket{}, errSDK.Wrap(err)
+	}
 
 	return Bucket{
 		ID:        res.GetId(),
@@ -135,6 +138,9 @@ func (sdk *SDK) ListFiles(ctx context.Context, bucketName string) (_ []FileListI
 	resp, err := sdk.client.FileList(ctx, &pb.FileListRequest{
 		BucketName: bucketName,
 	})
+	if err != nil {
+		return nil, errSDK.Wrap(err)
+	}
 
 	files := make([]FileListItem, 0, len(resp.List))
 	for _, fileMeta := range resp.List {
