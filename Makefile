@@ -12,15 +12,9 @@ test:
 test_quick:
 	@go test -v ./...
 
-.PHONY: post_linter_checks 
-post_linter_checks:
-	@go run ci/check-imports/main.go
-	@go run ci/check-copyright/main.go
-
 .PHONY: check
 check: # for local usage
 	@golangci-lint run ./... 
-	@$(MAKE) -s post_linter_checks
 	@linelint .
 
 .PHONY: lint_fix
@@ -28,12 +22,8 @@ lint_fix: # for local usage
 	@golangci-lint run --fix ./...
 	@linelint -a .
 
-.PHONY: copyright_fix
-copyright_fix: # for local usage
-	@go run ci/check-copyright/main.go -fix=true
-
 .PHONY: fix
-fix: lint_fix copyright_fix
+fix: lint_fix
 
 .PHONY: clean
 clean: # for local usage
