@@ -40,7 +40,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/spacemonkeygo/monkit/v3"
 	"github.com/spacemonkeygo/monkit/v3/environment"
@@ -144,19 +143,14 @@ func init() {
 }
 
 func initFlags() {
-	rootCmd.PersistentFlags().StringVar(&nodeRPCAddress, "node-address", "", "The address of the node RPC")
+	rootCmd.PersistentFlags().StringVar(&nodeRPCAddress, "node-address", "127.0.0.1:5000", "The address of the node RPC")
 	rootCmd.PersistentFlags().IntVar(&maxConcurrency, "maxConcurrency", 10, "Maximum concurrency level")
 	rootCmd.PersistentFlags().Int64Var(&chunkSegmentSize, "chunkSegmentSize", int64(memory.MB)*1, "Size of each chunk segment")
 	rootCmd.PersistentFlags().BoolVar(&useConnectionPool, "useConnectionPool", true, "Use connection pool")
-
-	if err := rootCmd.MarkPersistentFlagRequired("node-address"); err != nil {
-		log.Fatal(err)
-	}
 }
 
-func initTracing() (*mJaeger.ThriftCollector, func()) {
-	log := zap.NewExample()
-	collector, err := mJaeger.NewThriftCollector(log, tracingAgentAddr, serviceName, []mJaeger.Tag{}, 200, 0, 1*time.Nanosecond)
+func initTracing(log *zap.Logger) (*mJaeger.ThriftCollector, func()) {
+	collector, err := mJaeger.NewThriftCollector(log, tracingAgentAddr, serviceName, []mJaeger.Tag{}, 0, 0, 0)
 	if err != nil {
 		log.Error("failed to create collector", zap.Error(err))
 	}
@@ -168,31 +162,36 @@ func initTracing() (*mJaeger.ThriftCollector, func()) {
 }
 
 func main() {
+	initFlags()
 	environment.Register(monkit.Default)
-	collector, unreg := initTracing()
-	defer unreg()
+	log.SetOutput(os.Stderr)
 
-	var eg errgroup.Group
+	logger, err := zap.NewProduction()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() { _ = logger.Sync() }()
+
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	var eg errgroup.Group
 
+	collector, unreg := initTracing(logger)
 	eg.Go(func() error {
 		collector.Run(ctx)
 		return nil
 	})
+	defer func() {
+		cancel()
+		unreg()
 
-	log.SetOutput(os.Stderr)
-
-	initFlags()
+		err := eg.Wait()
+		if err != nil {
+			rootCmd.PrintErrf("unexpected errgroup wait error: %v", err)
+		}
+	}()
 
 	if err := rootCmd.Execute(); err != nil {
 		rootCmd.PrintErrf("failed to execute root cmd: %v", err)
-	}
-	cancel()
-
-	err := eg.Wait()
-	if err != nil {
-		rootCmd.PrintErrf("failed to wait for errgroup: %v", err)
 	}
 }
 
@@ -270,6 +269,10 @@ func cmdListBuckets(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to list buckets: %w", err)
 	}
 
+	if len(buckets) == 0 {
+		cmd.PrintErrln("No buckets")
+		return nil
+	}
 	for _, bucket := range buckets {
 		cmd.PrintErrf("Bucket: ID=%s, Name=%s, CreatedAt=%s\n", bucket.ID, bucket.Name, bucket.CreatedAt)
 	}
@@ -300,6 +303,10 @@ func cmdListFiles(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to list files: %w", err)
 	}
 
+	if len(files) == 0 {
+		cmd.PrintErrln("No files")
+		return nil
+	}
 	for _, file := range files {
 		cmd.PrintErrf("File: Name=%s, RootCID=%s, Size=%d, CreatedAt=%s\n", file.Name, file.RootCID, file.Size, file.CreatedAt)
 	}
