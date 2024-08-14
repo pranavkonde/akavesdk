@@ -18,17 +18,69 @@ Look at `Makefile` for details.
 
 ### Commands
 #### Bucket commands
-- `bucket create <bucket-name>` - creates a new bucket
-- `bucket view <bucket-name>` - view details of a specific bucket
-- `bucket list` - list all buckets
+- `bucket create` - Creates a new bucket.
+  - Required arguments:
+    - `bucket-name`: The name of the bucket to be created.
+    - `--node-address`: Address of the node you're connecting to.
+  - Example:
+    ```
+    akavecli bucket create my-bucket --node-address="localhost:5000"
+    ```
+
+- `bucket view` - Views details of a specific bucket.
+  - Required arguments:
+    - `bucket-name`: The name of the bucket to view.
+    - `--node-address`: Address of the node you're connecting to.
+  - Example:
+    ```
+    akavecli bucket view my-bucket --node-address="localhost:5000"
+    ```
+
+- `bucket list` - Lists all buckets.
+  - Required arguments:
+    - `--node-address`: Address of the node you're connecting to.
+  - Example:
+    ```
+    akavecli bucket list --node-address="localhost:5000"
+    ```
 
 #### File commands
-- `file list <bucket-name>` - list all files in a bucket.
-- `file info <bucket-name> <file-name>` - information about file.
-- `file upload <bucket-name> <file-path>` - uploads a file to a bucket(file-path can be relative or absolute, file-name is derived from file-path).
-- `file download <bucket-name> <file-name> <destination-path>` - download a file from a bucket.
+- `file list` - Lists all files in a bucket.
+  - Required arguments:
+    - `bucket-name`: The name of the bucket to list files from.
+    - `--node-address`: Address of the node you're connecting to.
+  - Example:
+    ```
+    akavecli file list my-bucket --node-address="localhost:5000"
+    ```
 
-### Examples
-- `akavecli bucket create foo --node-address="localhost:5000"` - creates bucket named `foo` on a node with address `localhost:5000`
-- `akavecli file upload foo ~/example.png --node-address="localhost:5000"` - uploads a file `example.png` from user's home folder to bucket `foo`
-- `akavecli file download foo example.png . --node-address="localhost:5000" --maxConcurrency=20` - downloads a file `example.png` from akavenode at localhost:5000 from bucket `foo` to current folder using at most 20 simulteneous requests, result path is `./example.png`
+- `file info` - Provides information about a file.
+  - Required arguments:
+    - `bucket-name`: The name of the bucket containing the file.
+    - `file-name`: The name of the file to get information about.
+    - `--node-address`: Address of the node you're connecting to.
+  - Example:
+    ```
+    akavecli file info my-bucket my-file.txt --node-address="localhost:5000"
+    ```
+
+- `file upload` - Uploads a file to a bucket.
+  - Required arguments:
+    - `bucket-name`: The name of the bucket to upload the file to.
+    - `file-path`: The path to the file to be uploaded. It can be relative or absolute.
+    - `--node-address`: Address of the node you're connecting to.
+  - Example:
+    ```
+    akavecli file upload my-bucket /path/to/my-file.txt --node-address="localhost:5000"
+    ```
+
+- `file download` - Downloads a file from a bucket.
+  - Required arguments:
+    - `bucket-name`: The name of the bucket containing the file.
+    - `file-name`: The name of the file to be downloaded.
+    - `destination-path`: The path where the file will be downloaded to.
+    - `--node-address`: Address of the node you're connecting to.
+  - Example:
+    ```
+    akavecli file download my-bucket my-file.txt /path/to/destination/ --node-address="localhost:5000"
+    ```
