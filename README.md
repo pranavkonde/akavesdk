@@ -1,6 +1,6 @@
 # akavesdk
 
-Base commit: e1a44a7181b072a42da6373f47f18dfd563f756f
+Base commit: 8a3a20bf1cf121d0b6d65550d39aa4703e936466
 
 ## Build and test instructions
 Requirements: Go 1.22+
