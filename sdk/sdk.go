@@ -6,12 +6,13 @@ package sdk
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"sort"
-	"sync"
+	"strings"
 
 	"github.com/ipfs/boxo/ipld/merkledag"
 	"github.com/ipfs/go-cid"
@@ -22,47 +23,127 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"akave.ai/akavesdk/private/encryption"
+	"akave.ai/akavesdk/private/ipc"
 	"akave.ai/akavesdk/private/memory"
 	"akave.ai/akavesdk/private/pb"
+	"akave.ai/akavesdk/private/spclient"
 )
 
 const (
+	BlockSize           = 1 * memory.MB  // BlockSize is 1MB, max supported block size is 1MiB
+	MaxChunkSize        = 32 * memory.MB // MaxChunkSize is 32MB
 	minBucketNameLength = 3
-	chunkSize           = 1 * memory.MB // 1MB
-	minFileSize         = 127           // 127 bytes
+	minFileSize         = 127 // 127 bytes
 )
 
 var errSDK = errs.Tag("sdk")
 var mon = monkit.Package()
 
+// Option is a SDK option.
+type Option func(*SDK)
+
 // SDK is the Akave SDK.
 type SDK struct {
-	client            pb.NodeAPIClient
-	conn              *grpc.ClientConn
+	client   pb.NodeAPIClient
+	conn     *grpc.ClientConn
+	spClient *spclient.SPClient
+
 	maxConcurrency    int
-	chunkSegmentSize  int64
+	blockSegmentSize  int64
 	useConnectionPool bool
+	privateKey        string
+	encryptionKey     []byte // empty means no encryption
+}
+
+// WithEncryptionKey sets the encryption key for the SDK.
+func WithEncryptionKey(key []byte) func(*SDK) {
+	return func(s *SDK) {
+		s.encryptionKey = key
+	}
+}
+
+// WithPrivateKey sets the private key for the SDK.
+func WithPrivateKey(key string) func(*SDK) {
+	return func(s *SDK) {
+		s.privateKey = key
+	}
 }
 
 // New returns a new SDK.
-func New(address string, maxConcurrency int, chunkSegmentSize int64, useConnectionPool bool) (*SDK, error) {
+func New(address string, maxConcurrency int, blockSegmentSize int64, useConnectionPool bool, options ...Option) (*SDK, error) {
 	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
 
-	return &SDK{
+	s := &SDK{
 		client:            pb.NewNodeAPIClient(conn),
 		conn:              conn,
 		maxConcurrency:    maxConcurrency,
-		chunkSegmentSize:  chunkSegmentSize,
+		blockSegmentSize:  blockSegmentSize,
 		useConnectionPool: useConnectionPool,
-	}, nil
+	}
+
+	for _, opt := range options {
+		opt(s)
+	}
+
+	keyLength := len(s.encryptionKey)
+	if keyLength != 0 && keyLength != 32 {
+		return nil, errSDK.Errorf("encyption key length should be 32 bytes long")
+	}
+
+	s.spClient = spclient.New()
+
+	return s, nil
 }
 
 // Close closes the SDK internal connection.
 func (sdk *SDK) Close() error {
 	return sdk.conn.Close()
+}
+
+// StreamingAPI returns SDK streaming API.
+func (sdk *SDK) StreamingAPI() *StreamingAPI {
+	return &StreamingAPI{
+		client:            pb.NewStreamAPIClient(sdk.conn),
+		conn:              sdk.conn,
+		maxConcurrency:    sdk.maxConcurrency,
+		blockSegmentSize:  sdk.blockSegmentSize,
+		useConnectionPool: sdk.useConnectionPool,
+		encryptionKey:     sdk.encryptionKey,
+	}
+}
+
+// IPC returns SDK ipc API.
+func (sdk *SDK) IPC() (*IPC, error) {
+	client := pb.NewIPCNodeAPIClient(sdk.conn)
+
+	res := &IPC{
+		client:            client,
+		conn:              sdk.conn,
+		maxConcurrency:    sdk.maxConcurrency,
+		blockSegmentSize:  sdk.blockSegmentSize,
+		useConnectionPool: sdk.useConnectionPool,
+		encryptionKey:     sdk.encryptionKey,
+	}
+
+	connParams, err := client.ConnectionParams(context.Background(), &pb.ConnectionParamsRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	res.ipc, err = ipc.Dial(context.Background(), ipc.Config{
+		DialURI:         connParams.DialUri,
+		PrivateKey:      sdk.privateKey,
+		ContractAddress: connParams.ContractAddress,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
 }
 
 // CreateBucket creates a new bucket.
@@ -127,6 +208,20 @@ func (sdk *SDK) ListBuckets(ctx context.Context) (_ []Bucket, err error) {
 	return buckets, nil
 }
 
+// DeleteBucket deletes a bucket by name.
+func (sdk *SDK) DeleteBucket(ctx context.Context, bucketName string) (err error) {
+	defer mon.Task()(&ctx, bucketName)(&err)
+
+	// TODO: add validation?
+
+	_, err = sdk.client.BucketDelete(ctx, &pb.BucketDeleteRequest{BucketName: bucketName})
+	if err != nil {
+		return errSDK.Wrap(err)
+	}
+
+	return nil
+}
+
 // ListFiles returns list of files in a particular bucket.
 func (sdk *SDK) ListFiles(ctx context.Context, bucketName string) (_ []FileListItem, err error) {
 	defer mon.Task()(&ctx, bucketName)(&err)
@@ -175,7 +270,7 @@ func (sdk *SDK) FileInfo(ctx context.Context, bucketName string, fileName string
 
 	return FileMeta{
 		RootCID:   res.GetRootCid(),
-		Name:      res.GetName(),
+		Name:      res.GetFileName(),
 		Size:      res.GetSize(),
 		CreatedAt: res.CreatedAt.AsTime(),
 	}, nil
@@ -191,23 +286,28 @@ func (sdk *SDK) CreateFileUpload(ctx context.Context, bucketName string, fileNam
 		return FileUpload{}, errSDK.Errorf("file size is too small")
 	}
 
-	dag, err := CalculateDAG(ctx, reader, chunkSize.ToInt64())
+	encKey, err := encryptionKey(sdk.encryptionKey, bucketName, fileName)
+	if err != nil {
+		return FileUpload{}, errSDK.Wrap(err)
+	}
+
+	dag, err := BuildDAG(ctx, reader, BlockSize.ToInt64(), encKey)
 	if err != nil {
 		return FileUpload{}, err
 	}
 
-	rootCID := dag.RootCID.String()
+	rootCID := dag.CID.String()
 	req := &pb.FileUploadCreateRequest{
 		BucketName: bucketName,
 		RootCid:    rootCID,
-		Name:       fileName,
+		FileName:   fileName,
 		Size:       fileSize,
 	}
-	req.Chunks = make([]*pb.FileUploadCreateRequest_Chunk, len(dag.Chunks))
-	for i, chunk := range dag.Chunks {
-		req.Chunks[i] = &pb.FileUploadCreateRequest_Chunk{
-			Cid:  chunk.CID,
-			Size: chunk.Size,
+	req.Blocks = make([]*pb.FileUploadCreateRequest_Block, len(dag.Blocks))
+	for i, block := range dag.Blocks {
+		req.Blocks[i] = &pb.FileUploadCreateRequest_Block{
+			Cid:  block.CID,
+			Size: int64(len(block.Data)),
 		}
 	}
 
@@ -216,19 +316,18 @@ func (sdk *SDK) CreateFileUpload(ctx context.Context, bucketName string, fileNam
 		return FileUpload{}, errSDK.Wrap(err)
 	}
 
-	chunks := make([]FileChunk, len(res.ChunkUploads))
-	for i, upload := range res.ChunkUploads {
-		ch, found := chunkByCID(dag.Chunks, upload.Cid)
+	blocks := make([]FileBlock, len(res.Blocks))
+	for i, upload := range res.Blocks {
+		ch, found := blockByCID(dag.Blocks, upload.Cid)
 		if !found {
-			return FileUpload{}, errSDK.Errorf("chunk not found")
+			return FileUpload{}, errSDK.Errorf("block not found")
 		}
-		chunks[i] = FileChunk{
+		blocks[i] = FileBlock{
 			CID:         upload.Cid,
-			Size:        upload.Size,
-			NodeID:      upload.NodeId,
-			NodeAddress: upload.NodeAddress,
-			Permit:      upload.Permit,
 			Data:        ch.Data,
+			Permit:      upload.Permit,
+			NodeAddress: upload.NodeAddress,
+			NodeID:      upload.NodeId,
 		}
 	}
 
@@ -237,7 +336,7 @@ func (sdk *SDK) CreateFileUpload(ctx context.Context, bucketName string, fileNam
 		BucketName: bucketName,
 		FileName:   fileName,
 		FileSize:   fileSize,
-		Chunks:     chunks,
+		Blocks:     blocks,
 	}, nil
 }
 
@@ -250,43 +349,53 @@ func (sdk *SDK) Upload(ctx context.Context, fileUpload FileUpload) (err error) {
 	pool := newConnectionPool()
 	defer func() {
 		if err := pool.close(); err != nil {
-			slog.Warn("failed to close connection", err)
+			slog.Warn("failed to close connection", slog.String("error", err.Error()))
 		}
 	}()
 
-	for i, chunk := range fileUpload.Chunks {
-		i, chunk := i, chunk
+	for i, block := range fileUpload.Blocks {
+		i, block := i, block
 		deriveCtx := context.WithoutCancel(ctx)
 		g.Go(func() (err error) {
-			defer mon.Task()(&deriveCtx, chunk.CID)(&err)
+			defer mon.Task()(&deriveCtx, block.CID)(&err)
 
-			client, closer, err := pool.createClient(chunk.NodeAddress, sdk.useConnectionPool)
+			client, closer, err := pool.createClient(block.NodeAddress, sdk.useConnectionPool)
 			if err != nil {
 				return err
 			}
 			if closer != nil {
 				defer func() {
 					if closeErr := closer(); closeErr != nil {
-						slog.Warn("failed to close connection", slog.Int("num", i), chunk.CID, chunk.NodeAddress, closeErr)
+						slog.Warn("failed to close connection",
+							slog.Int("block_index", i),
+							slog.String("block_cid", block.CID),
+							slog.String("node_address", block.NodeAddress),
+							slog.String("error", closeErr.Error()),
+						)
 					}
 				}()
 			}
 
-			sender, err := client.FileUploadChunk(ctx)
+			sender, err := client.FileUploadBlock(ctx)
 			if err != nil {
 				return err
 			}
 
 			defer func() {
 				if _, closeErr := sender.CloseAndRecv(); closeErr != nil {
-					slog.Warn("failed to close and recv", slog.Int("num", i), chunk.CID, chunk.NodeAddress, closeErr)
+					slog.Warn("failed to close and recv",
+						slog.Int("block_index", i),
+						slog.String("block_cid", block.CID),
+						slog.String("node_address", block.NodeAddress),
+						slog.String("error", closeErr.Error()),
+					)
 				}
 			}()
 
-			err = uploadChunkSegments(ctx, &pb.FileChunkData{
-				Data:     chunk.Data,
-				ChunkCid: chunk.CID,
-			}, sdk.chunkSegmentSize, sender.Send)
+			err = uploadBlockSegments(ctx, &pb.FileBlockData{
+				Data: block.Data,
+				Cid:  block.CID,
+			}, sdk.blockSegmentSize, sender.Send)
 			if err != nil {
 				return err
 			}
@@ -302,76 +411,10 @@ func (sdk *SDK) Upload(ctx context.Context, fileUpload FileUpload) (err error) {
 	return nil
 }
 
-func uploadChunkSegments(ctx context.Context, chunk *pb.FileChunkData, chunkSegmentSize int64, sender func(*pb.FileChunkData) error) (err error) {
-	defer mon.Task()(&ctx, chunkSegmentSize)(&err)
-	if chunkSegmentSize <= 0 {
-		return fmt.Errorf("invalid chunkSegmentSize: %d", chunkSegmentSize)
-	}
-
-	data := chunk.Data
-	dataLen := len(data)
-	if dataLen == 0 {
-		return nil
-	}
-
-	chunkCid := chunk.ChunkCid
-	chunkSegmentSizeInt := int(chunkSegmentSize)
-
-	for i := 0; i < dataLen; i += chunkSegmentSizeInt {
-		end := i + chunkSegmentSizeInt
-		if end > dataLen {
-			end = dataLen
-		}
-
-		fileChunk := &pb.FileChunkData{
-			Data:     data[i:end:end],
-			ChunkCid: chunkCid,
-		}
-
-		if err := sender(fileChunk); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // CreateFileDownload creates a new download request.
-func (sdk *SDK) CreateFileDownload(ctx context.Context, bucketName string, rootCID string) (_ FileDownload, err error) {
-	defer mon.Task()(&ctx, bucketName, rootCID)(&err)
+func (sdk *SDK) CreateFileDownload(ctx context.Context, bucketName string, fileName string) (_ FileDownload, innerErr error) {
+	defer mon.Task()(&ctx, bucketName, fileName)(&innerErr)
 	if bucketName == "" {
-		return FileDownload{}, errSDK.Errorf("empty bucket name")
-	}
-	if rootCID == "" {
-		return FileDownload{}, errSDK.Errorf("empty root cid")
-	}
-
-	res, err := sdk.client.FileDownloadCreate(ctx, &pb.FileDownloadCreateRequest{
-		BucketName: bucketName,
-		RootCid:    rootCID,
-	})
-	if err != nil {
-		return FileDownload{}, errSDK.Wrap(err)
-	}
-
-	chunks := make([]FileChunk, len(res.Chunks))
-	for i, chunk := range res.Chunks {
-		chunks[i] = FileChunk{
-			CID:         chunk.Cid,
-			Size:        chunk.Size,
-			NodeID:      chunk.NodeId,
-			NodeAddress: chunk.NodeAddress,
-			Permit:      chunk.Permit,
-		}
-	}
-
-	return FileDownload{Chunks: chunks}, nil
-}
-
-// CreateFileDownloadV2 creates a new download request.
-func (sdk *SDK) CreateFileDownloadV2(ctx context.Context, bucketID string, fileName string) (_ FileDownload, innerErr error) {
-	defer mon.Task()(&ctx, bucketID, fileName)(&innerErr)
-	if bucketID == "" {
 		return FileDownload{}, errSDK.Errorf("empty bucket id")
 	}
 
@@ -379,26 +422,113 @@ func (sdk *SDK) CreateFileDownloadV2(ctx context.Context, bucketID string, fileN
 		return FileDownload{}, errSDK.Errorf("empty file name")
 	}
 
-	res, err := sdk.client.FileDownloadCreateV2(ctx, &pb.FileDownloadCreateV2Request{
-		BucketName: bucketID,
+	res, err := sdk.client.FileDownloadCreate(ctx, &pb.FileDownloadCreateRequest{
+		BucketName: bucketName,
 		FileName:   fileName,
 	})
 	if err != nil {
 		return FileDownload{}, errSDK.Wrap(err)
 	}
 
-	chunks := make([]FileChunk, len(res.Chunks))
-	for i, chunk := range res.Chunks {
-		chunks[i] = FileChunk{
-			CID:         chunk.Cid,
-			Size:        chunk.Size,
-			NodeID:      chunk.NodeId,
-			NodeAddress: chunk.NodeAddress,
-			Permit:      chunk.Permit,
+	blocks := make([]FileBlock, len(res.Blocks))
+	for i, block := range res.Blocks {
+		blocks[i] = FileBlock{
+			CID:         block.Cid,
+			NodeID:      block.NodeId,
+			NodeAddress: block.NodeAddress,
+			Permit:      block.Permit,
 		}
 	}
 
-	return FileDownload{Chunks: chunks}, nil
+	return FileDownload{
+		BucketName: bucketName,
+		FileName:   fileName,
+		Blocks:     blocks,
+	}, nil
+}
+
+// CreateFileDownloadV2 creates a new download request.
+func (sdk *SDK) CreateFileDownloadV2(ctx context.Context, bucketName string, fileName string) (_ FileDownloadSP, innerErr error) {
+	defer mon.Task()(&ctx, bucketName, fileName)(&innerErr)
+	if bucketName == "" {
+		return FileDownloadSP{}, errSDK.Errorf("empty bucket id")
+	}
+
+	if fileName == "" {
+		return FileDownloadSP{}, errSDK.Errorf("empty file name")
+	}
+
+	res, err := sdk.client.FileDownloadCreateV2(ctx, &pb.FileDownloadCreateRequestV2{
+		BucketName: bucketName,
+		FileName:   fileName,
+	})
+	if err != nil {
+		return FileDownloadSP{}, errSDK.Wrap(err)
+	}
+
+	blocks := make([]FileBlockSP, len(res.Blocks))
+	for i, block := range res.Blocks {
+		switch source := block.Source.(type) {
+		case *pb.FileDownloadCreateResponseV2_BlockDownloadV2_NodeBlock:
+			blocks[i] = FileBlockSP{
+				CID:         block.GetCid(),
+				Permit:      source.NodeBlock.GetPermit(),
+				NodeAddress: source.NodeBlock.GetNodeAddress(),
+				NodeID:      source.NodeBlock.GetNodeId(),
+			}
+		case *pb.FileDownloadCreateResponseV2_BlockDownloadV2_ServiceProviderBlock:
+			blocks[i] = FileBlockSP{
+				CID:       block.GetCid(),
+				SPBaseURL: source.ServiceProviderBlock.GetSpAddress(),
+			}
+		default:
+			return FileDownloadSP{}, errSDK.Wrap(err)
+		}
+	}
+
+	return FileDownloadSP{
+		BucketName: bucketName,
+		FileName:   fileName,
+		Blocks:     blocks,
+	}, nil
+}
+
+// CreateRangeFileDownload creates a new download request with block ranges.
+func (sdk *SDK) CreateRangeFileDownload(ctx context.Context, bucketName string, fileName string, start, end int64) (_ FileDownload, innerErr error) {
+	defer mon.Task()(&ctx, bucketName, fileName, start, end)(&innerErr)
+	if bucketName == "" {
+		return FileDownload{}, errSDK.Errorf("empty bucket id")
+	}
+
+	if fileName == "" {
+		return FileDownload{}, errSDK.Errorf("empty file name")
+	}
+
+	res, err := sdk.client.FileDownloadRangeCreate(ctx, &pb.FileDownloadRangeCreateRequest{
+		BucketName: bucketName,
+		FileName:   fileName,
+		Start:      start,
+		End:        end,
+	})
+	if err != nil {
+		return FileDownload{}, errSDK.Wrap(err)
+	}
+
+	blocks := make([]FileBlock, len(res.Blocks))
+	for i, block := range res.Blocks {
+		blocks[i] = FileBlock{
+			CID:         block.Cid,
+			NodeID:      block.NodeId,
+			NodeAddress: block.NodeAddress,
+			Permit:      block.Permit,
+		}
+	}
+
+	return FileDownload{
+		BucketName: bucketName,
+		FileName:   fileName,
+		Blocks:     blocks,
+	}, nil
 }
 
 // Download function downloads a file from FileDownload.
@@ -410,36 +540,46 @@ func (sdk *SDK) Download(ctx context.Context, fileDownload FileDownload, writer 
 	pool := newConnectionPool()
 	defer func() {
 		if err := pool.close(); err != nil {
-			slog.Warn("failed to close connection", err)
+			slog.Warn("failed to close connection", slog.String("error", err.Error()))
 		}
 	}()
-	type retrievedChunk struct {
+	type retrievedBlock struct {
 		Pos  int
 		CID  string
 		Data []byte
 	}
-	ch := make(chan retrievedChunk, len(fileDownload.Chunks))
+	ch := make(chan retrievedBlock, len(fileDownload.Blocks))
 
-	for i, chunk := range fileDownload.Chunks {
-		i, chunk := i, chunk
+	encKey, err := encryptionKey(sdk.encryptionKey, fileDownload.BucketName, fileDownload.FileName)
+	if err != nil {
+		return errSDK.Wrap(err)
+	}
+
+	for i, block := range fileDownload.Blocks {
+		i, block := i, block
 		deriveCtx := context.WithoutCancel(ctx)
 		g.Go(func() (err error) {
-			defer mon.Task()(&deriveCtx, chunk.CID)(&err)
+			defer mon.Task()(&deriveCtx, block.CID)(&err)
 
-			client, closer, err := pool.createClient(chunk.NodeAddress, sdk.useConnectionPool)
+			client, closer, err := pool.createClient(block.NodeAddress, sdk.useConnectionPool)
 			if err != nil {
 				return err
 			}
 			if closer != nil {
 				defer func() {
 					if closeErr := closer(); closeErr != nil {
-						slog.Warn("failed to close connection", slog.Int("num", i), chunk.CID, chunk.NodeAddress, closeErr)
+						slog.Warn("failed to close connection",
+							slog.Int("block_index", i),
+							slog.String("block_cid", block.CID),
+							slog.String("node_address", block.NodeAddress),
+							slog.String("error", closeErr.Error()),
+						)
 					}
 				}()
 			}
 
-			downloadClient, err := client.FileDownloadChunk(ctx, &pb.FileDownloadChunkRequest{
-				ChunkCid: chunk.CID,
+			downloadClient, err := client.FileDownloadBlock(ctx, &pb.FileDownloadBlockRequest{
+				BlockCid: block.CID,
 			})
 			if err != nil {
 				return err
@@ -447,13 +587,18 @@ func (sdk *SDK) Download(ctx context.Context, fileDownload FileDownload, writer 
 
 			defer func() {
 				if closeErr := downloadClient.CloseSend(); closeErr != nil {
-					slog.Warn("failed to close and send", slog.Int("num", i), chunk.CID, chunk.NodeAddress, closeErr)
+					slog.Warn("failed to close and send",
+						slog.Int("block_index", i),
+						slog.String("block_cid", block.CID),
+						slog.String("node_address", block.NodeAddress),
+						slog.String("error", closeErr.Error()),
+					)
 				}
 			}()
 
 			var buf bytes.Buffer
 			for {
-				chunkData, err := downloadClient.Recv()
+				blockData, err := downloadClient.Recv()
 				if err != nil {
 					if errors.Is(err, io.EOF) {
 						break
@@ -461,12 +606,12 @@ func (sdk *SDK) Download(ctx context.Context, fileDownload FileDownload, writer 
 					return err
 				}
 
-				_, _ = buf.Write(chunkData.Data)
+				_, _ = buf.Write(blockData.Data)
 			}
 
-			ch <- retrievedChunk{
+			ch <- retrievedBlock{
 				Pos:  i,
-				CID:  chunk.CID,
+				CID:  block.CID,
 				Data: buf.Bytes(),
 			}
 			return nil
@@ -479,35 +624,25 @@ func (sdk *SDK) Download(ctx context.Context, fileDownload FileDownload, writer 
 
 	close(ch)
 
-	chunks := make([]retrievedChunk, 0)
+	blocks := make([]retrievedBlock, 0)
 	for retrieved := range ch {
-		chunks = append(chunks, retrieved)
+		blocks = append(blocks, retrieved)
 	}
-	sort.SliceStable(chunks, func(i, j int) bool {
-		return chunks[j].Pos > chunks[i].Pos
+	sort.SliceStable(blocks, func(i, j int) bool {
+		return blocks[j].Pos > blocks[i].Pos
 	})
-	for _, chunk := range chunks {
-		id, err := cid.Decode(chunk.CID)
+	for i, block := range blocks {
+		data, err := ExtractBlockData(block.CID, block.Data)
 		if err != nil {
-			return err
+			return errSDK.Wrap(err)
 		}
 
-		var data []byte
-		switch id.Type() {
-		case cid.DagProtobuf:
-			node, err := merkledag.DecodeProtobuf(chunk.Data)
+		if len(encKey) > 0 { // if ecnryption is enabled
+			info := fmt.Sprintf("block_%d", i)
+			data, err = encryption.Decrypt(encKey, data, []byte(info))
 			if err != nil {
 				return errSDK.Wrap(err)
 			}
-			fsNode, err := unixfs.FSNodeFromBytes(node.Data())
-			if err != nil {
-				return errSDK.Wrap(err)
-			}
-			data = fsNode.Data()
-		case cid.Raw:
-			data = chunk.Data
-		default:
-			return errSDK.Errorf("unknown cid type: %v", id.Type())
 		}
 
 		if _, err := writer.Write(data); err != nil {
@@ -518,77 +653,244 @@ func (sdk *SDK) Download(ctx context.Context, fileDownload FileDownload, writer 
 	return nil
 }
 
-type connectionPool struct {
-	mu                sync.RWMutex
-	connections       map[string]*grpc.ClientConn
-	useConnectionPool bool
-}
+// DownloadV2 function downloads a file from FileDownload.
+func (sdk *SDK) DownloadV2(ctx context.Context, fileDownload FileDownloadSP, writer io.Writer) (err error) {
+	defer mon.Task()(&ctx, fileDownload)(&err)
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(sdk.maxConcurrency)
 
-func newConnectionPool() *connectionPool {
-	return &connectionPool{
-		connections: make(map[string]*grpc.ClientConn),
-	}
-}
-func (p *connectionPool) createClient(addr string, pooled bool) (pb.NodeAPIClient, func() error, error) {
-	if pooled {
-		conn, err := p.get(addr)
-		if err != nil {
-			return nil, nil, err
+	pool := newConnectionPool()
+	defer func() {
+		if err := pool.close(); err != nil {
+			slog.Warn("failed to close connection", slog.String("error", err.Error()))
 		}
-		return pb.NewNodeAPIClient(conn), nil, nil
+	}()
+	type retrievedBlock struct {
+		Pos  int
+		CID  string
+		Data []byte
+	}
+	ch := make(chan retrievedBlock, len(fileDownload.Blocks))
+
+	encKey, err := encryptionKey(sdk.encryptionKey, fileDownload.BucketName, fileDownload.FileName)
+	if err != nil {
+		return errSDK.Wrap(err)
 	}
 
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, nil, err
+	for i, block := range fileDownload.Blocks {
+		i, block := i, block
+		deriveCtx := context.WithoutCancel(ctx)
+		g.Go(func() (err error) {
+			defer mon.Task()(&deriveCtx, block.CID)(&err)
+
+			data, err := sdk.downloadBlock(ctx, block, pool, i)
+			if err != nil {
+				return err
+			}
+
+			ch <- retrievedBlock{
+				Pos:  i,
+				CID:  block.CID,
+				Data: data,
+			}
+			return nil
+		})
 	}
-	return pb.NewNodeAPIClient(conn), conn.Close, nil
+
+	if err := g.Wait(); err != nil {
+		return errSDK.Wrap(err)
+	}
+
+	close(ch)
+
+	blocks := make([]retrievedBlock, 0)
+	for retrieved := range ch {
+		blocks = append(blocks, retrieved)
+	}
+	sort.SliceStable(blocks, func(i, j int) bool {
+		return blocks[j].Pos > blocks[i].Pos
+	})
+	for i, block := range blocks {
+		data, err := ExtractBlockData(block.CID, block.Data)
+		if err != nil {
+			return errSDK.Wrap(err)
+		}
+
+		if len(encKey) > 0 { // if encryption is enabled
+			info := fmt.Sprintf("block_%d", i)
+			data, err = encryption.Decrypt(encKey, data, []byte(info))
+			if err != nil {
+				return errSDK.Wrap(err)
+			}
+		}
+
+		if _, err := writer.Write(data); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-func (p *connectionPool) get(addr string) (*grpc.ClientConn, error) {
-	p.mu.RLock()
-	if conn, exists := p.connections[addr]; exists {
-		p.mu.RUnlock()
-		return conn, nil
-	}
-	p.mu.RUnlock()
-
-	// Lock to prevent race condition
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// Double-check to see if another goroutine has added the connection
-	if conn, exists := p.connections[addr]; exists {
-		return conn, nil
+// downloadBlock handles downloading a block, either via spclient's FetchBlock or through a direct node connection.
+func (sdk *SDK) downloadBlock(ctx context.Context, block FileBlockSP, pool *connectionPool, index int) ([]byte, error) {
+	if block.SPBaseURL != "" && block.CID != "" {
+		// Handle case when only NodeAddress is provided, use spclient's FetchBlock method
+		cid, err := cid.Decode(block.CID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse block's CID %s: %w", block.CID, err)
+		}
+		fetchedBlock, err := sdk.spClient.FetchBlock(ctx, block.SPBaseURL, cid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch block with CID %s: %w", block.CID, err)
+		}
+		return fetchedBlock.RawData(), nil
 	}
 
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, closer, err := pool.createClient(block.NodeAddress, sdk.useConnectionPool)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client for block %s: %w", block.CID, err)
+	}
+	if closer != nil {
+		defer func() {
+			if closeErr := closer(); closeErr != nil {
+				slog.Warn("failed to close connection",
+					slog.Int("block_index", index),
+					slog.String("block_cid", block.CID),
+					slog.String("node_address", block.NodeAddress),
+					slog.String("error", closeErr.Error()),
+				)
+			}
+		}()
+	}
+
+	downloadClient, err := client.FileDownloadBlock(ctx, &pb.FileDownloadBlockRequest{
+		BlockCid: block.CID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to download block %s: %w", block.CID, err)
+	}
+
+	defer func() {
+		if closeErr := downloadClient.CloseSend(); closeErr != nil {
+			slog.Warn("failed to close and send",
+				slog.Int("block_index", index),
+				slog.String("block_cid", block.CID),
+				slog.String("node_address", block.NodeAddress),
+				slog.String("error", closeErr.Error()),
+			)
+		}
+	}()
+
+	var buf bytes.Buffer
+	for {
+		blockData, err := downloadClient.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("failed to receive block data for CID %s: %w", block.CID, err)
+		}
+
+		_, _ = buf.Write(blockData.Data)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// FileDelete deletes a file by bucket name and file name.
+func (sdk *SDK) FileDelete(ctx context.Context, bucketName, fileName string) (err error) {
+	defer mon.Task()(&ctx, bucketName, fileName)(&err)
+
+	if strings.TrimSpace(bucketName) == "" || strings.TrimSpace(fileName) == "" {
+		return errSDK.Errorf("empty bucket or file name. Bucket: '%s', File: '%s'", bucketName, fileName)
+	}
+
+	_, err = sdk.client.FileDelete(ctx, &pb.FileDeleteRequest{
+		BucketName: bucketName,
+		FileName:   fileName,
+	})
+	if err != nil {
+		return errSDK.Wrap(err)
+	}
+
+	return nil
+}
+
+// ExtractBlockData unwraps the block data from the block(either protobuf or raw).
+func ExtractBlockData(idStr string, data []byte) ([]byte, error) {
+	id, err := cid.Decode(idStr)
+	if err != nil {
+		return nil, err
+	}
+	switch id.Type() {
+	case cid.DagProtobuf:
+		node, err := merkledag.DecodeProtobuf(data)
+		if err != nil {
+			return nil, err
+		}
+		fsNode, err := unixfs.FSNodeFromBytes(node.Data())
+		if err != nil {
+			return nil, err
+		}
+		return fsNode.Data(), nil
+	case cid.Raw:
+		return data, nil
+	default:
+		return nil, fmt.Errorf("unknown cid type: %v", id.Type())
+	}
+}
+
+func uploadBlockSegments(ctx context.Context, block *pb.FileBlockData, blockSegmentSize int64, sender func(*pb.FileBlockData) error) (err error) {
+	defer mon.Task()(&ctx, blockSegmentSize, block.Cid)(&err)
+
+	if blockSegmentSize <= 0 {
+		return fmt.Errorf("invalid blockSegmentSize: %d", blockSegmentSize)
+	}
+
+	data := block.Data
+	dataLen := len(data)
+	if dataLen == 0 {
+		return nil
+	}
+
+	blockSegmentSizeInt := int(blockSegmentSize)
+
+	for i := 0; i < dataLen; i += blockSegmentSizeInt {
+		end := i + blockSegmentSizeInt
+		if end > dataLen {
+			end = dataLen
+		}
+
+		fileBlock := &pb.FileBlockData{
+			Data: data[i:end:end],
+			Cid:  block.Cid,
+		}
+
+		if err := sender(fileBlock); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func encryptionKey(masterKey []byte, bucketName, fileName string) ([]byte, error) {
+	if len(masterKey) == 0 {
+		return nil, nil
+	}
+
+	infoString := fmt.Sprintf("%s/%s", bucketName, fileName)
+	key, err := encryption.DeriveKey(masterKey, []byte(infoString))
 	if err != nil {
 		return nil, err
 	}
 
-	// Add the new connection to the pool
-	p.connections[addr] = conn
-
-	return conn, nil
+	return key, nil
 }
 
-func (p *connectionPool) close() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	var errList []error
-
-	for addr, conn := range p.connections {
-		if err := conn.Close(); err != nil {
-			errList = append(errList, fmt.Errorf("failed to close connection to %s: %w", addr, err))
-		}
-		delete(p.connections, addr)
-	}
-
-	if len(errList) > 0 {
-		return fmt.Errorf("encountered errors while closing connections: %v", errList)
-	}
-
-	return nil
+func BucketIDForName(bucketName string) string {
+	h := sha256.New()
+	h.Write([]byte(bucketName))
+	return string(h.Sum(nil))
 }

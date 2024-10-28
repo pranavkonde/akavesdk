@@ -3,43 +3,16 @@
 
 // Package main provides a command-line interface for managing Akave SDK resources
 // such as buckets and files.
-//
-// Usage:
-//
-//	akavecli [command] [flags]
-//
-// The available commands are:
-//
-//	bucket create <bucket-name>      Creates a new bucket
-//	bucket view <bucket-name>     Views details of a specific bucket
-//	bucket list                             Lists all buckets
-//	file upload <bucket-name> <file-path>     Uploads a file to a bucket
-//	file download <bucket-name> <file-name> <destination-path>   Downloads a file from a bucket
-//
-// Example:
-//
-//	export NODE_RPC_ADDRESS="localhost:5001"
-//	akavecli bucket create "my-bucket"
-//	akavecli bucket view "my-bucket"
-//	akavecli bucket list
-//
-// Environment Variables:
-//
-//	NODE_RPC_ADDRESS  The RPC address of the Akave node to connect to.
-//
-// Flags:
-//
-//	--help    Show help for any command
-//
-// See each command's help for more details on usage.
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spacemonkeygo/monkit/v3"
 	"github.com/spacemonkeygo/monkit/v3/environment"
@@ -71,15 +44,56 @@ var (
 	bucketCreateCmd = &cobra.Command{
 		Use:   "create",
 		Short: "Creates a new bucket",
-		Args:  cobra.ExactArgs(1),
-		RunE:  cmdCreateBucket,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return NewCmdParamsError(fmt.Sprintf("create bucket command expects exactly 1 argument [bucket name]; got %d", len(args)))
+			}
+
+			if args[0] == "" {
+				return NewCmdParamsError("bucket name is required")
+			}
+
+			return nil
+		},
+		RunE: cmdCreateBucket,
+	}
+
+	bucketDeleteCmd = &cobra.Command{
+		Use:   "delete",
+		Short: "Removes a bucket",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return NewCmdParamsError(fmt.Sprintf("delete bucket command expects exactly 1 argument [bucket name]; got %d", len(args)))
+			}
+
+			if args[0] == "" {
+				return NewCmdParamsError("bucket name is required")
+			}
+
+			return nil
+		},
+		RunE: cmdDeleteBucket,
 	}
 
 	bucketViewCmd = &cobra.Command{
 		Use:   "view",
 		Short: "Views a bucket's details",
-		Args:  cobra.ExactArgs(1),
-		RunE:  cmdViewBucket,
+		Args: func(cmd *cobra.Command, args []string) error {
+			for i, arg := range args {
+				args[i] = strings.TrimSpace(arg)
+			}
+
+			if len(args) != 1 {
+				return NewCmdParamsError(fmt.Sprintf("create bucket command expects exactly 1 argument [bucket name]; got %d", len(args)))
+			}
+
+			if args[0] == "" {
+				return NewCmdParamsError("bucket name is required")
+			}
+
+			return nil
+		},
+		RunE: cmdViewBucket,
 	}
 
 	bucketListCmd = &cobra.Command{
@@ -92,34 +106,171 @@ var (
 	fileListCmd = &cobra.Command{
 		Use:   "list",
 		Short: "Lists all files in a bucket",
-		Args:  cobra.ExactArgs(1),
-		RunE:  cmdListFiles,
+		Args: func(cmd *cobra.Command, args []string) error {
+			for i, arg := range args {
+				args[i] = strings.TrimSpace(arg)
+			}
+
+			if len(args) != 1 {
+				return NewCmdParamsError(fmt.Sprintf("create bucket command expects exactly 1 argument [bucket name]; got %d", len(args)))
+			}
+
+			if args[0] == "" {
+				return NewCmdParamsError("bucket name is required")
+			}
+
+			return nil
+		},
+		RunE: cmdListFiles,
 	}
 
 	fileInfoCmd = &cobra.Command{
 		Use:   "info",
 		Short: "Retrieves file information",
-		Args:  cobra.ExactArgs(2),
-		RunE:  cmdFileInfo,
+		Args: func(cmd *cobra.Command, args []string) error {
+			for i, arg := range args {
+				args[i] = strings.TrimSpace(arg)
+			}
+
+			if len(args) != 2 {
+				return NewCmdParamsError(fmt.Sprintf("file info command expects exactly 2 arguments [bucket name] [file name]; got %d", len(args)))
+			}
+
+			if args[0] == "" {
+				return NewCmdParamsError("bucket name is required")
+			}
+
+			if args[1] == "" {
+				return NewCmdParamsError("file name is required")
+			}
+
+			return nil
+		},
+		RunE: cmdFileInfo,
 	}
 
 	fileUploadCmd = &cobra.Command{
 		Use:   "upload",
 		Short: "Uploads a file to a bucket",
-		Args:  cobra.ExactArgs(2),
-		RunE:  cmdFileUpload,
+		Args: func(cmd *cobra.Command, args []string) error {
+			for i, arg := range args {
+				args[i] = strings.TrimSpace(arg)
+			}
+
+			if len(args) != 2 {
+				return NewCmdParamsError(fmt.Sprintf("file upload command expects exactly 2 arguments [bucket name] [file path]; got %d", len(args)))
+			}
+
+			if args[0] == "" {
+				return NewCmdParamsError("bucket name is required")
+			}
+
+			if args[1] == "" {
+				return NewCmdParamsError("file path is required")
+			}
+
+			return nil
+		},
+		RunE: cmdFileUpload,
 	}
 
 	fileDownloadCmd = &cobra.Command{
 		Use:   "download",
 		Short: "Downloads a file from a bucket",
-		Args:  cobra.ExactArgs(3),
-		RunE:  cmdFileDownload,
+		Args: func(cmd *cobra.Command, args []string) error {
+			for i, arg := range args {
+				args[i] = strings.TrimSpace(arg)
+			}
+
+			if len(args) != 3 {
+				return NewCmdParamsError(fmt.Sprintf("file download command expects exactly 3 arguments [bucket name] [file name] [destination path]; got %d", len(args)))
+			}
+
+			if args[0] == "" {
+				return NewCmdParamsError("bucket name is required")
+			}
+
+			if args[1] == "" {
+				return NewCmdParamsError("file name is required")
+			}
+
+			if args[2] == "" {
+				return NewCmdParamsError("destination path is required")
+			}
+
+			return nil
+		},
+		RunE: cmdFileDownload,
+	}
+
+	fileDownloadV2Cmd = &cobra.Command{
+		Use:   "download2",
+		Short: "Downloads a file from a bucket",
+		Args: func(cmd *cobra.Command, args []string) error {
+			for i, arg := range args {
+				args[i] = strings.TrimSpace(arg)
+			}
+
+			if len(args) != 3 {
+				return NewCmdParamsError(fmt.Sprintf("file download command expects exactly 3 arguments [bucket name] [file name] [destination path]; got %d", len(args)))
+			}
+
+			if args[0] == "" {
+				return NewCmdParamsError("bucket name is required")
+			}
+
+			if args[1] == "" {
+				return NewCmdParamsError("file name is required")
+			}
+
+			if args[2] == "" {
+				return NewCmdParamsError("destination path is required")
+			}
+
+			return nil
+		},
+
+		RunE: cmdFileDownloadV2,
+	}
+
+	fileRangeDownloadCmd = &cobra.Command{
+		Use:     "download-range",
+		Short:   "Downloads a file from a bucket with given range",
+		Example: "akavecli file download-range foo-bucket test.txt 10-90 .",
+		Args: func(cmd *cobra.Command, args []string) error {
+			for i, arg := range args {
+				args[i] = strings.TrimSpace(arg)
+			}
+
+			if len(args) != 4 {
+				return NewCmdParamsError(fmt.Sprintf("file download command expects exactly 4 arguments [bucket name] [file name] [range] [destination path]; got %d", len(args)))
+			}
+
+			if args[0] == "" {
+				return NewCmdParamsError("bucket name is required")
+			}
+
+			if args[1] == "" {
+				return NewCmdParamsError("file name is required")
+			}
+
+			if len(strings.Split(args[2], "-")) != 2 {
+				return NewCmdParamsError("range should be in the format start-end")
+			}
+
+			if args[3] == "" {
+				return NewCmdParamsError("destination path is required")
+			}
+
+			return nil
+		},
+		RunE: cmdFileRangeDownload,
 	}
 
 	nodeRPCAddress    string
+	privateKey        string
 	maxConcurrency    int
-	chunkSegmentSize  int64
+	blockSegmentSize  int64
 	useConnectionPool bool
 
 	// tracing.
@@ -130,23 +281,63 @@ var (
 	serviceName      = "akavecli"
 )
 
+// CmdParamsError represents an error related to positional arguments.
+type CmdParamsError struct {
+	Message string
+}
+
+// Error returns error message.
+func (e *CmdParamsError) Error() string {
+	return e.Message
+}
+
+// NewCmdParamsError creates new CmdParamsError error.
+func NewCmdParamsError(message string) error {
+	return &CmdParamsError{Message: message}
+}
+
 func init() {
 	bucketCmd.AddCommand(bucketCreateCmd)
+	bucketCmd.AddCommand(bucketDeleteCmd)
 	bucketCmd.AddCommand(bucketViewCmd)
 	bucketCmd.AddCommand(bucketListCmd)
+
 	fileCmd.AddCommand(fileListCmd)
 	fileCmd.AddCommand(fileInfoCmd)
 	fileCmd.AddCommand(fileUploadCmd)
 	fileCmd.AddCommand(fileDownloadCmd)
+	fileCmd.AddCommand(fileDownloadV2Cmd)
+	fileCmd.AddCommand(fileRangeDownloadCmd)
+	// streaming file API
+	fileStreamingCmd.AddCommand(streamingFileListCmd)
+	fileStreamingCmd.AddCommand(streamingFileInfoCmd)
+	fileStreamingCmd.AddCommand(streamingFileUploadCmd)
+	fileStreamingCmd.AddCommand(streamingFileDownloadCmd)
+	fileStreamingCmd.AddCommand(streamingFileDeleteCmd)
+	// ipc API
+	ipcCmd.AddCommand(ipcBucketCmd)
+	ipcCmd.AddCommand(ipcFileCmd)
+	ipcBucketCmd.AddCommand(ipcBucketCreateCmd)
+	ipcBucketCmd.AddCommand(ipcBucketViewCmd)
+	ipcBucketCmd.AddCommand(ipcBucketListCmd)
+	ipcBucketCmd.AddCommand(ipcBucketDeleteCmd)
+	ipcFileCmd.AddCommand(ipcFileUploadCmd)
+	ipcFileCmd.AddCommand(ipcFileDownloadCmd)
+	ipcFileCmd.AddCommand(ipcFileListCmd)
+	ipcFileCmd.AddCommand(ipcFileInfoCmd)
+
 	rootCmd.AddCommand(bucketCmd)
 	rootCmd.AddCommand(fileCmd)
+	rootCmd.AddCommand(fileStreamingCmd)
+	rootCmd.AddCommand(ipcCmd)
 }
 
 func initFlags() {
 	rootCmd.PersistentFlags().StringVar(&nodeRPCAddress, "node-address", "127.0.0.1:5000", "The address of the node RPC")
 	rootCmd.PersistentFlags().IntVar(&maxConcurrency, "maxConcurrency", 10, "Maximum concurrency level")
-	rootCmd.PersistentFlags().Int64Var(&chunkSegmentSize, "chunkSegmentSize", int64(memory.MB)*1, "Size of each chunk segment")
+	rootCmd.PersistentFlags().Int64Var(&blockSegmentSize, "blockSegmentSize", int64(memory.MB)*1, "Size of each block segment")
 	rootCmd.PersistentFlags().BoolVar(&useConnectionPool, "useConnectionPool", true, "Use connection pool")
+	ipcCmd.PersistentFlags().StringVar(&privateKey, "private-key", "", "Private key for signing IPC transactions")
 }
 
 func initTracing(log *zap.Logger) (*mJaeger.ThriftCollector, func()) {
@@ -165,6 +356,9 @@ func main() {
 	initFlags()
 	environment.Register(monkit.Default)
 	log.SetOutput(os.Stderr)
+
+	rootCmd.SilenceErrors = true
+	rootCmd.SilenceUsage = true
 
 	logger, err := zap.NewProduction()
 	if err != nil {
@@ -190,8 +384,31 @@ func main() {
 		}
 	}()
 
-	if err := rootCmd.Execute(); err != nil {
-		rootCmd.PrintErrf("failed to execute root cmd: %v", err)
+	rootCmd.DisableFlagParsing = true
+	// traverse early to get subcommand.
+	cmd, _, err := rootCmd.Traverse(os.Args[1:])
+	if err != nil {
+		rootCmd.PrintErrf("Error: %v\n", err)
+		_ = rootCmd.Usage()
+		return
+	}
+
+	rootCmd.DisableFlagParsing = false
+	// parse flags early to display usage on error.
+	err = cmd.ParseFlags(os.Args[1:])
+	if err != nil {
+		rootCmd.PrintErrf("Error: failed to parse flags: %v\n", err)
+		_ = cmd.Usage()
+		return
+	}
+
+	if err = rootCmd.Execute(); err != nil {
+		rootCmd.PrintErrf("Error: %v\n", err)
+
+		paramErr := &CmdParamsError{}
+		if errors.As(err, &paramErr) {
+			_ = cmd.Usage()
+		}
 	}
 }
 
@@ -199,11 +416,8 @@ func cmdCreateBucket(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	defer mon.Task()(&ctx, args)(&err)
 	bucketName := args[0]
-	if bucketName == "" {
-		return fmt.Errorf("bucket name is required")
-	}
 
-	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, chunkSegmentSize, useConnectionPool)
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockSegmentSize, useConnectionPool)
 	if err != nil {
 		return err
 	}
@@ -223,15 +437,37 @@ func cmdCreateBucket(cmd *cobra.Command, args []string) (err error) {
 	return nil
 }
 
+func cmdDeleteBucket(cmd *cobra.Command, args []string) (err error) {
+	ctx := cmd.Context()
+	defer mon.Task()(&ctx, args)(&err)
+	bucketName := args[0]
+
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockSegmentSize, useConnectionPool)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := sdk.Close(); cerr != nil {
+			cmd.PrintErrf("failed to close SDK: %v", cerr)
+		}
+	}()
+
+	err = sdk.DeleteBucket(ctx, bucketName)
+	if err != nil {
+		return fmt.Errorf("failed to delete bucket: %w", err)
+	}
+
+	cmd.PrintErrf("Bucket deleted: Name=%s\n", bucketName)
+
+	return nil
+}
+
 func cmdViewBucket(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	defer mon.Task()(&ctx, args)(&err)
 	bucketName := args[0]
-	if bucketName == "" {
-		return fmt.Errorf("bucket name is required")
-	}
 
-	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, chunkSegmentSize, useConnectionPool)
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockSegmentSize, useConnectionPool)
 	if err != nil {
 		return err
 	}
@@ -254,7 +490,8 @@ func cmdViewBucket(cmd *cobra.Command, args []string) (err error) {
 func cmdListBuckets(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	defer mon.Task()(&ctx, args)(&err)
-	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, chunkSegmentSize, useConnectionPool)
+
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockSegmentSize, useConnectionPool)
 	if err != nil {
 		return err
 	}
@@ -284,11 +521,8 @@ func cmdListFiles(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	defer mon.Task()(&ctx, args)(&err)
 	bucketName := args[0]
-	if bucketName == "" {
-		return fmt.Errorf("bucket name is required")
-	}
 
-	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, chunkSegmentSize, useConnectionPool)
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockSegmentSize, useConnectionPool)
 	if err != nil {
 		return err
 	}
@@ -319,14 +553,8 @@ func cmdFileInfo(cmd *cobra.Command, args []string) (err error) {
 	defer mon.Task()(&ctx, args)(&err)
 	bucketName := args[0]
 	fileName := args[1]
-	if bucketName == "" {
-		return fmt.Errorf("bucket name is required")
-	}
-	if fileName == "" {
-		return fmt.Errorf("file name is required")
-	}
 
-	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, chunkSegmentSize, useConnectionPool)
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockSegmentSize, useConnectionPool)
 	if err != nil {
 		return err
 	}
@@ -351,14 +579,6 @@ func cmdFileUpload(cmd *cobra.Command, args []string) (err error) {
 	defer mon.Task()(&ctx, args)(&err)
 	bucketName := args[0]
 	filePath := args[1]
-
-	if bucketName == "" {
-		return fmt.Errorf("bucket name is required")
-	}
-	if filePath == "" {
-		return fmt.Errorf("file path is required")
-	}
-
 	fileName := filepath.Base(filePath)
 
 	file, err := os.Open(filePath)
@@ -376,7 +596,7 @@ func cmdFileUpload(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to get file info: %w", err)
 	}
 
-	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, chunkSegmentSize, useConnectionPool)
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockSegmentSize, useConnectionPool)
 	if err != nil {
 		return err
 	}
@@ -391,8 +611,7 @@ func cmdFileUpload(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to create file upload: %w", err)
 	}
 
-	err = sdk.Upload(ctx, fileUpload)
-	if err != nil {
+	if err := sdk.Upload(ctx, fileUpload); err != nil {
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
 
@@ -407,17 +626,48 @@ func cmdFileDownload(cmd *cobra.Command, args []string) (err error) {
 	bucketName := args[0]
 	fileName := args[1]
 	destPath := args[2]
-	if bucketName == "" {
-		return fmt.Errorf("bucket name is required")
+
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockSegmentSize, useConnectionPool)
+	if err != nil {
+		return err
 	}
-	if fileName == "" {
-		return fmt.Errorf("file name is required")
-	}
-	if destPath == "" {
-		return fmt.Errorf("destination path is required")
+	defer func() {
+		if cerr := sdk.Close(); cerr != nil {
+			cmd.PrintErrf("failed to close SDK: %v", cerr)
+		}
+	}()
+
+	fileDownload, err := sdk.CreateFileDownload(ctx, bucketName, fileName)
+	if err != nil {
+		return fmt.Errorf("failed to create file download: %w", err)
 	}
 
-	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, chunkSegmentSize, useConnectionPool)
+	outFile, err := os.Create(filepath.Join(destPath, fileName))
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer func() {
+		if cerr := outFile.Close(); cerr != nil && err == nil {
+			cmd.PrintErrf("failed to close destination file: %v", cerr)
+		}
+	}()
+
+	if err := sdk.Download(ctx, fileDownload, outFile); err != nil {
+		return fmt.Errorf("failed to download file: %w", err)
+	}
+
+	cmd.PrintErrf("File downloaded successfully: Name=%s, Path=%s\n", fileName, filepath.Join(destPath, fileName))
+	return nil
+}
+
+func cmdFileDownloadV2(cmd *cobra.Command, args []string) (err error) {
+	ctx := cmd.Context()
+	defer mon.Task()(&ctx, args)(&err)
+	bucketName := args[0]
+	fileName := args[1]
+	destPath := args[2]
+
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockSegmentSize, useConnectionPool)
 	if err != nil {
 		return err
 	}
@@ -442,11 +692,57 @@ func cmdFileDownload(cmd *cobra.Command, args []string) (err error) {
 		}
 	}()
 
-	err = sdk.Download(ctx, fileDownload, outFile)
-	if err != nil {
+	if err := sdk.DownloadV2(ctx, fileDownload, outFile); err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
 	}
 
 	cmd.PrintErrf("File downloaded successfully: Name=%s, Path=%s\n", fileName, filepath.Join(destPath, fileName))
+	return nil
+}
+
+func cmdFileRangeDownload(cmd *cobra.Command, args []string) (err error) {
+	ctx := cmd.Context()
+	defer mon.Task()(&ctx, args)(&err)
+	bucketName := args[0]
+	fileName := args[1]
+	blockRangeStr := args[2]
+	destPath := args[3]
+
+	var start, end int64
+	n, err := fmt.Sscanf(blockRangeStr, "%d-%d", &start, &end)
+	if n != 2 || err != nil {
+		return fmt.Errorf("failed to parse ranges in %s: %w", blockRangeStr, err)
+	}
+
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockSegmentSize, useConnectionPool)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := sdk.Close(); cerr != nil {
+			cmd.PrintErrf("failed to close SDK: %v", cerr)
+		}
+	}()
+
+	fileDownload, err := sdk.CreateRangeFileDownload(ctx, bucketName, fileName, start, end)
+	if err != nil {
+		return fmt.Errorf("failed to create range file download: %w", err)
+	}
+
+	outFile, err := os.Create(filepath.Join(destPath, fileName))
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer func() {
+		if cerr := outFile.Close(); cerr != nil && err == nil {
+			cmd.PrintErrf("failed to close destination file: %v", cerr)
+		}
+	}()
+
+	if err := sdk.Download(ctx, fileDownload, outFile); err != nil {
+		return fmt.Errorf("failed to download file: %w", err)
+	}
+
+	cmd.PrintErrf("File part downloaded successfully: Name=%s, Blocks=%s, Path=%s\n", fileName, blockRangeStr, filepath.Join(destPath, fileName))
 	return nil
 }
