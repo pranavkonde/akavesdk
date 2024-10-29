@@ -346,6 +346,8 @@ Used in IPC endpoint FileDownloadCreate.
   ```
 - **Download File**: Downloads a file from a bucket.
   ```sh
-  akavecli ipc file dowload <bucket-name> <file-name> <destination-path> --node-address=localhost:5000 --private-key="some-private-key"
+  akavecli ipc file dowload <bucket-name> <file-name> <destination-path> \
+  --node-address=localhost:5000 \
+  --private-key="some-private-key"
   ```
   
