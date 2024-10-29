@@ -280,7 +280,7 @@ Used in IPC endpoint FileDownloadCreate.
   ```sh
   akavecli bucket list --node-address=localhost:5000
   ```
-- **Delete Bucket**: Soft deletess a specific bucket.
+- **Delete Bucket**: Soft deletes a specific bucket.
   ```sh
   akavecli bucket delete <bucket-name> --node-address=localhost:5000
   ```
