@@ -1,6 +1,8 @@
-# MVP SDK CLI
+# Akave SDK CLI
 
-# akavesdk
+The **Akave SDK CLI** (`akavesdk`) is a command-line tool designed to streamline interactions with Akave's decentralized storage platform. With this SDK, developers can efficiently manage buckets, upload and download files, and interact with metadata across Akave nodes. It supports both standard API operations and an advanced streaming API for high-performance file management, as well as an IPC API for blockchain-based data operations.
+
+Whether you're building a new integration or managing data across nodes, this SDK provides robust capabilities to help you achieve seamless, scalable storage solutions.
 
 Base commit: 8a3a20bf1cf121d0b6d65550d39aa4703e936466
 
