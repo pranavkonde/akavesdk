@@ -6,15 +6,17 @@ package sdk
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"slices"
 
+	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	"akave.ai/akavesdk/private/cryptoutils"
 	"akave.ai/akavesdk/private/encryption"
 	"akave.ai/akavesdk/private/pb"
 )
@@ -23,6 +25,7 @@ import (
 type StreamingAPI struct {
 	client            pb.StreamAPIClient
 	conn              *grpc.ClientConn
+	erasureCode       *ErasureCode
 	maxConcurrency    int
 	blockPartSize     int64
 	useConnectionPool bool
@@ -49,13 +52,14 @@ func (sdk *StreamingAPI) FileInfo(ctx context.Context, bucketName string, fileNa
 	}
 
 	return FileMetaV2{
-		StreamID:   res.GetStreamId(),
-		RootCID:    res.GetRootCid(),
-		BucketID:   res.GetBucketId(),
-		Name:       res.GetFileName(),
-		Size:       res.GetSize(),
-		CreatedAt:  res.CreatedAt.AsTime(),
-		CommitedAt: res.CommittedAt.AsTime(),
+		StreamID:    res.GetStreamId(),
+		RootCID:     res.GetRootCid(),
+		BucketID:    res.GetBucketId(),
+		Name:        res.GetFileName(),
+		EncodedSize: res.GetEncodedSize(),
+		Size:        res.GetSize(),
+		CreatedAt:   res.CreatedAt.AsTime(),
+		CommitedAt:  res.CommittedAt.AsTime(),
 	}, nil
 }
 
@@ -76,15 +80,31 @@ func (sdk *StreamingAPI) ListFiles(ctx context.Context, bucketName string) (_ []
 
 	files := make([]FileMetaV2, 0, len(resp.Files))
 	for _, fileMeta := range resp.Files {
-		files = append(files, FileMetaV2{
-			StreamID:   fileMeta.GetStreamId(),
-			RootCID:    fileMeta.GetRootCid(),
-			BucketID:   BucketIDFromName(bucketName),
-			Name:       fileMeta.GetName(),
-			Size:       fileMeta.GetSize(),
-			CreatedAt:  fileMeta.GetCreatedAt().AsTime(),
-			CommitedAt: fileMeta.GetCommitedAt().AsTime(),
-		})
+		files = append(files, toFileMeta(fileMeta, bucketName))
+	}
+
+	return files, nil
+}
+
+// FileVersions returns list of files in a particular bucket.
+func (sdk *StreamingAPI) FileVersions(ctx context.Context, bucketName, fileName string) (_ []FileMetaV2, err error) {
+	defer mon.Task()(&ctx, bucketName, fileName)(&err)
+
+	if bucketName == "" {
+		return nil, errSDK.Errorf("empty bucket name")
+	}
+
+	resp, err := sdk.client.FileVersions(ctx, &pb.StreamFileListVersionsRequest{
+		BucketName: bucketName,
+		FileName:   fileName,
+	})
+	if err != nil {
+		return nil, errSDK.Wrap(err)
+	}
+
+	files := make([]FileMetaV2, 0, len(resp.Versions))
+	for _, fileMeta := range resp.Versions {
+		files = append(files, toFileMeta(fileMeta, bucketName))
 	}
 
 	return files, nil
@@ -120,8 +140,23 @@ func (sdk *StreamingAPI) CreateFileUpload(ctx context.Context, bucketName string
 func (sdk *StreamingAPI) Upload(ctx context.Context, upload FileUploadV2, reader io.Reader) (_ FileMetaV2, err error) {
 	defer mon.Task()(&ctx, upload)(&err)
 
+	chunkEncOverhead := 0
+	fileEncKey, err := encryptionKey(sdk.encryptionKey, upload.BucketID, upload.Name)
+	if err != nil {
+		return FileMetaV2{}, errSDK.Wrap(err)
+	}
+	if len(fileEncKey) > 0 {
+		chunkEncOverhead = EncryptionOverhead
+	}
+
 	isEmptyFile := true
-	buf := make([]byte, sdk.maxBlocksInChunk*int(BlockSize.ToInt64()))
+
+	bufferSize := sdk.maxBlocksInChunk * int(BlockSize)
+	if sdk.erasureCode != nil { // erasure coding enabled
+		bufferSize = sdk.erasureCode.DataBlocks * int(BlockSize)
+	}
+	bufferSize -= chunkEncOverhead
+	buf := make([]byte, bufferSize)
 
 	dagRoot, err := NewDAGRoot()
 	if err != nil {
@@ -148,7 +183,7 @@ func (sdk *StreamingAPI) Upload(ctx context.Context, upload FileUploadV2, reader
 		}
 		isEmptyFile = false
 
-		chunkUpload, err := sdk.createChunkUpload(ctx, upload, i, bytes.NewReader(buf[:n]))
+		chunkUpload, err := sdk.createChunkUpload(ctx, upload, i, fileEncKey, buf[:n])
 		if err != nil {
 			return FileMetaV2{}, err
 		}
@@ -157,7 +192,7 @@ func (sdk *StreamingAPI) Upload(ctx context.Context, upload FileUploadV2, reader
 			return FileMetaV2{}, errSDK.Wrap(err)
 		}
 
-		if err := sdk.uploadChunkV2(ctx, chunkUpload); err != nil {
+		if err := sdk.uploadChunk(ctx, chunkUpload); err != nil {
 			return FileMetaV2{}, err
 		}
 	}
@@ -167,7 +202,7 @@ func (sdk *StreamingAPI) Upload(ctx context.Context, upload FileUploadV2, reader
 		return FileMetaV2{}, errSDK.Wrap(err)
 	}
 
-	fileMeta, err := sdk.commitStream(ctx, upload, rootCID.String())
+	fileMeta, err := sdk.commitStream(ctx, upload, rootCID.String(), i)
 	if err != nil {
 		return FileMetaV2{}, err
 	}
@@ -176,12 +211,14 @@ func (sdk *StreamingAPI) Upload(ctx context.Context, upload FileUploadV2, reader
 }
 
 // CreateFileDownload creates a new download request.
-func (sdk *StreamingAPI) CreateFileDownload(ctx context.Context, bucketName, fileName string) (_ FileDownloadV2, err error) {
-	defer mon.Task()(&ctx, bucketName, fileName)(&err)
+// rootCID is optional and can be empty. Required when you want to dwonload a specific version of the file.
+func (sdk *StreamingAPI) CreateFileDownload(ctx context.Context, bucketName, fileName, rootCID string) (_ FileDownloadV2, err error) {
+	defer mon.Task()(&ctx, bucketName, fileName, rootCID)(&err)
 
 	res, err := sdk.client.FileDownloadCreate(ctx, &pb.StreamFileDownloadCreateRequest{
 		BucketName: bucketName,
 		FileName:   fileName,
+		RootCid:    rootCID,
 	})
 	if err != nil {
 		return FileDownloadV2{}, errSDK.Wrap(err)
@@ -190,9 +227,10 @@ func (sdk *StreamingAPI) CreateFileDownload(ctx context.Context, bucketName, fil
 	chunks := make([]Chunk, len(res.Chunks))
 	for i, chunk := range res.Chunks {
 		chunks[i] = Chunk{
-			CID:   chunk.Cid,
-			Size:  chunk.Size,
-			Index: int64(i),
+			CID:         chunk.Cid,
+			EncodedSize: chunk.EncodedSize,
+			Size:        chunk.Size,
+			Index:       int64(i),
 		}
 	}
 
@@ -221,9 +259,10 @@ func (sdk *StreamingAPI) CreateRangeFileDownload(ctx context.Context, bucketName
 	chunks := make([]Chunk, len(res.Chunks))
 	for i, chunk := range res.Chunks {
 		chunks[i] = Chunk{
-			CID:   chunk.Cid,
-			Size:  chunk.Size,
-			Index: int64(i) + start,
+			CID:         chunk.Cid,
+			EncodedSize: chunk.EncodedSize,
+			Size:        chunk.Size,
+			Index:       int64(i) + start,
 		}
 	}
 
@@ -239,6 +278,11 @@ func (sdk *StreamingAPI) CreateRangeFileDownload(ctx context.Context, bucketName
 func (sdk *StreamingAPI) Download(ctx context.Context, fileDownload FileDownloadV2, writer io.Writer) (err error) {
 	defer mon.Task()(&ctx, fileDownload)(&err)
 
+	fileEncKey, err := encryptionKey(sdk.encryptionKey, fileDownload.BucketID, fileDownload.Name)
+	if err != nil {
+		return errSDK.Wrap(err)
+	}
+
 	for _, chunk := range fileDownload.Chunks {
 		select {
 		case <-ctx.Done():
@@ -251,7 +295,40 @@ func (sdk *StreamingAPI) Download(ctx context.Context, fileDownload FileDownload
 			return err
 		}
 
-		if err := sdk.downloadChunkBlocksV2(ctx, fileDownload.BucketID, fileDownload.StreamID, chunkDownload, writer); err != nil {
+		if err := sdk.downloadChunkBlocks(ctx, fileDownload.StreamID, chunkDownload, fileEncKey, writer); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// DownloadRandom downloads a file using streaming api and fetches only randomly half of the blocks.
+func (sdk *StreamingAPI) DownloadRandom(ctx context.Context, fileDownload FileDownloadV2, writer io.Writer) (err error) {
+	defer mon.Task()(&ctx, fileDownload)(&err)
+
+	if sdk.erasureCode == nil {
+		return errSDK.Errorf("erasure coding is not enabled")
+	}
+
+	fileEncKey, err := encryptionKey(sdk.encryptionKey, fileDownload.BucketID, fileDownload.Name)
+	if err != nil {
+		return errSDK.Wrap(err)
+	}
+
+	for _, chunk := range fileDownload.Chunks {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		chunkDownload, err := sdk.createChunkDownload(ctx, fileDownload.StreamID, chunk)
+		if err != nil {
+			return err
+		}
+
+		if err := sdk.downloadRandomChunkBlocks(ctx, fileDownload.StreamID, chunkDownload, fileEncKey, writer); err != nil {
 			return err
 		}
 	}
@@ -270,20 +347,33 @@ func (sdk *StreamingAPI) FileDelete(ctx context.Context, bucketName, fileName st
 	return errSDK.Wrap(err)
 }
 
-func (sdk *StreamingAPI) createChunkUpload(ctx context.Context, fileUpload FileUploadV2, index int64, reader io.Reader) (_ FileChunkUploadV2, err error) {
+func (sdk *StreamingAPI) createChunkUpload(ctx context.Context, fileUpload FileUploadV2, index int64, fileEncryptionKey, data []byte) (_ FileChunkUploadV2, err error) {
 	defer mon.Task()(&ctx, fileUpload, index)(&err)
 
-	encKey, err := encryptionKey(sdk.encryptionKey, fileUpload.BucketID, fileUpload.StreamID)
-	if err != nil {
-		return FileChunkUploadV2{}, errSDK.Wrap(err)
+	if len(fileEncryptionKey) > 0 {
+		data, err = encryption.Encrypt(fileEncryptionKey, data, []byte(fmt.Sprintf("%d", index)))
+		if err != nil {
+			return FileChunkUploadV2{}, errSDK.Wrap(err)
+		}
 	}
 
-	chunkDAG, err := BuildDAG(ctx, reader, BlockSize.ToInt64(), encKey)
+	size := int64(len(data))
+	blockSize := BlockSize.ToInt64()
+	if sdk.erasureCode != nil { // erasure coding is enabled
+		data, err = sdk.erasureCode.Encode(data)
+		if err != nil {
+			return FileChunkUploadV2{}, errSDK.Wrap(err)
+		}
+		// equivalent to notion of shard size in erasure coding terminology
+		blockSize = int64(len(data) / (sdk.erasureCode.DataBlocks + sdk.erasureCode.ParityBlocks))
+	}
+
+	chunkDAG, err := BuildDAG(ctx, bytes.NewBuffer(data), blockSize, nil)
 	if err != nil {
 		return FileChunkUploadV2{}, err
 	}
 
-	protoChunk := toProtoChunk(fileUpload.StreamID, chunkDAG.CID.String(), index, chunkDAG.Blocks)
+	protoChunk := toProtoChunk(fileUpload.StreamID, chunkDAG.CID.String(), index, size, chunkDAG.Blocks)
 	req := &pb.StreamFileUploadChunkCreateRequest{Chunk: protoChunk}
 
 	res, err := sdk.client.FileUploadChunkCreate(ctx, req)
@@ -307,13 +397,14 @@ func (sdk *StreamingAPI) createChunkUpload(ctx context.Context, fileUpload FileU
 		StreamID:      fileUpload.StreamID,
 		Index:         index,
 		ChunkCID:      chunkDAG.CID,
+		ActualSize:    size,
 		RawDataSize:   chunkDAG.RawDataSize,
 		ProtoNodeSize: chunkDAG.ProtoNodeSize,
 		Blocks:        chunkDAG.Blocks,
 	}, nil
 }
 
-func (sdk *StreamingAPI) uploadChunkV2(ctx context.Context, fileChunkUpload FileChunkUploadV2) (err error) {
+func (sdk *StreamingAPI) uploadChunk(ctx context.Context, fileChunkUpload FileChunkUploadV2) (err error) {
 	defer mon.Task()(&ctx, fileChunkUpload)(&err)
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -326,7 +417,13 @@ func (sdk *StreamingAPI) uploadChunkV2(ctx context.Context, fileChunkUpload File
 		}
 	}()
 
-	protoChunk := toProtoChunk(fileChunkUpload.StreamID, fileChunkUpload.ChunkCID.String(), fileChunkUpload.Index, fileChunkUpload.Blocks)
+	protoChunk := toProtoChunk(
+		fileChunkUpload.StreamID,
+		fileChunkUpload.ChunkCID.String(),
+		fileChunkUpload.Index,
+		fileChunkUpload.ActualSize,
+		fileChunkUpload.Blocks,
+	)
 	for i, block := range fileChunkUpload.Blocks {
 		deriveCtx := context.WithoutCancel(ctx)
 		g.Go(func() (err error) {
@@ -356,13 +453,13 @@ func (sdk *StreamingAPI) uploadChunkV2(ctx context.Context, fileChunkUpload File
 				return err
 			}
 
-			err = sdk.uploadBlockV2(ctx, &pb.StreamFileBlockData{
+			err = sdk.uploadBlock(ctx, &pb.StreamFileBlockData{
 				Data:  block.Data,
 				Cid:   block.CID,
 				Index: int64(i),
 				Chunk: protoChunk,
 			}, sender.Send)
-			if err != nil {
+			if err != nil && !errors.Is(err, io.EOF) {
 				return err
 			}
 
@@ -400,21 +497,23 @@ func (sdk *StreamingAPI) createChunkDownload(ctx context.Context, streamID strin
 	}
 
 	return FileChunkDownloadV2{
-		CID:    chunk.CID,
-		Index:  chunk.Index,
-		Size:   chunk.Size,
-		Blocks: blocks,
+		CID:         chunk.CID,
+		Index:       chunk.Index,
+		EncodedSize: chunk.EncodedSize,
+		Size:        chunk.Size,
+		Blocks:      blocks,
 	}, nil
 }
 
-func (sdk *StreamingAPI) downloadChunkBlocksV2(
+func (sdk *StreamingAPI) downloadChunkBlocks(
 	ctx context.Context,
-	bucketID, streamID string,
+	streamID string,
 	chunkDownload FileChunkDownloadV2,
+	fileEncryptionKey []byte,
 	writer io.Writer,
 ) (err error) {
 
-	defer mon.Task()(&ctx, bucketID, streamID, chunkDownload)(&err)
+	defer mon.Task()(&ctx, streamID, chunkDownload)(&err)
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(sdk.maxConcurrency)
@@ -433,14 +532,9 @@ func (sdk *StreamingAPI) downloadChunkBlocksV2(
 	}
 	ch := make(chan retrievedBlock, len(chunkDownload.Blocks))
 
-	encKey, err := encryptionKey(sdk.encryptionKey, bucketID, streamID)
-	if err != nil {
-		return errSDK.Wrap(err)
-	}
-
 	for i, block := range chunkDownload.Blocks {
-		i, block := i, block
 		deriveCtx := context.WithoutCancel(ctx)
+
 		g.Go(func() (err error) {
 			defer mon.Task()(&deriveCtx, block.CID)(&err)
 
@@ -498,59 +592,197 @@ func (sdk *StreamingAPI) downloadChunkBlocksV2(
 
 	close(ch)
 
-	recvBlocks := make([]retrievedBlock, 0, len(chunkDownload.Blocks))
+	blocks := make([][]byte, len(chunkDownload.Blocks))
 	for retrieved := range ch {
-		recvBlocks = append(recvBlocks, retrieved)
-	}
-	slices.SortStableFunc(recvBlocks, func(a, b retrievedBlock) int {
-		return a.Pos - b.Pos
-	})
-
-	for i, block := range recvBlocks {
-		data, err := ExtractBlockData(block.CID, block.Data)
+		data, err := ExtractBlockData(retrieved.CID, retrieved.Data)
 		if err != nil {
 			return errSDK.Wrap(err)
 		}
+		blocks[retrieved.Pos] = data
+	}
 
-		if len(encKey) > 0 { // if ecnryption is enabled
-			info := fmt.Sprintf("block_%d", i)
-			data, err = encryption.Decrypt(encKey, data, []byte(info))
-			if err != nil {
-				return errSDK.Wrap(err)
-			}
-		}
-
-		if _, err := writer.Write(data); err != nil {
+	var data []byte
+	if sdk.erasureCode != nil { // erasure coding is enabled
+		data, err = sdk.erasureCode.ExtractData(blocks, int(chunkDownload.Size))
+		if err != nil {
 			return errSDK.Wrap(err)
 		}
+	} else {
+		data = bytes.Join(blocks, nil)
+	}
+
+	if len(fileEncryptionKey) > 0 {
+		data, err = encryption.Decrypt(fileEncryptionKey, data, []byte(fmt.Sprintf("%d", chunkDownload.Index)))
+		if err != nil {
+			return errSDK.Wrap(err)
+		}
+	}
+
+	if _, err := writer.Write(data); err != nil {
+		return errSDK.Wrap(err)
 	}
 
 	return nil
 }
 
-func (sdk *StreamingAPI) commitStream(ctx context.Context, upload FileUploadV2, rootCID string) (_ FileMetaV2, err error) {
-	defer mon.Task()(&ctx, upload, rootCID)(&err)
+// !!!!use only with erasure coding!!!!
+func (sdk *StreamingAPI) downloadRandomChunkBlocks(
+	ctx context.Context,
+	streamID string,
+	chunkDownload FileChunkDownloadV2,
+	fileEncryptionKey []byte,
+	writer io.Writer,
+) (err error) {
+
+	defer mon.Task()(&ctx, streamID, chunkDownload)(&err)
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(sdk.maxConcurrency)
+
+	pool := newConnectionPool()
+	defer func() {
+		if err := pool.close(); err != nil {
+			slog.Warn("failed to close connection", slog.String("error", err.Error()))
+		}
+	}()
+
+	type retrievedBlock struct {
+		Pos  int
+		CID  string
+		Data []byte
+	}
+	ch := make(chan retrievedBlock, len(chunkDownload.Blocks))
+
+	blocksMap := make(map[int]FileBlock, len(chunkDownload.Blocks))
+	for i, block := range chunkDownload.Blocks {
+		blocksMap[i] = block
+	}
+
+	blockIndexes := maps.Keys(blocksMap)
+	cryptoutils.Shuffle(blockIndexes)
+
+	// take only half of the blocks
+	for _, i := range blockIndexes[:sdk.erasureCode.DataBlocks] {
+		delete(blocksMap, i)
+	}
+
+	for index, block := range blocksMap {
+		deriveCtx := context.WithoutCancel(ctx)
+		g.Go(func() (err error) {
+			defer mon.Task()(&deriveCtx, block.CID)(&err)
+
+			client, closer, err := pool.createStreamingClient(block.NodeAddress, sdk.useConnectionPool)
+			if err != nil {
+				return err
+			}
+			if closer != nil {
+				defer func() {
+					if closeErr := closer(); closeErr != nil {
+						slog.Warn("failed to close connection",
+							slog.Int("block_index", index),
+							slog.String("block_cid", block.CID),
+							slog.String("error", closeErr.Error()),
+						)
+					}
+				}()
+			}
+
+			downloadClient, err := client.FileDownloadBlock(ctx, &pb.StreamFileDownloadBlockRequest{
+				StreamId:   streamID,
+				ChunkCid:   chunkDownload.CID,
+				ChunkIndex: chunkDownload.Index,
+				BlockCid:   block.CID,
+				BlockIndex: int64(index),
+			})
+			if err != nil {
+				return err
+			}
+
+			var buf bytes.Buffer
+			for {
+				blockData, err := downloadClient.Recv()
+				if err != nil {
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					return err
+				}
+				_, _ = buf.Write(blockData.Data)
+			}
+
+			ch <- retrievedBlock{
+				Pos:  index,
+				CID:  block.CID,
+				Data: buf.Bytes(),
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return errSDK.Wrap(err)
+	}
+
+	close(ch)
+
+	blocks := make([][]byte, len(chunkDownload.Blocks))
+	for retrieved := range ch {
+		data, err := ExtractBlockData(retrieved.CID, retrieved.Data)
+		if err != nil {
+			return errSDK.Wrap(err)
+		}
+		blocks[retrieved.Pos] = data
+	}
+
+	var data []byte
+	if sdk.erasureCode != nil { // erasure coding is enabled
+		data, err = sdk.erasureCode.ExtractData(blocks, int(chunkDownload.Size))
+		if err != nil {
+			return errSDK.Wrap(err)
+		}
+	} else {
+		data = bytes.Join(blocks, nil)
+	}
+
+	if len(fileEncryptionKey) > 0 {
+		data, err = encryption.Decrypt(fileEncryptionKey, data, []byte(fmt.Sprintf("%d", chunkDownload.Index)))
+		if err != nil {
+			return errSDK.Wrap(err)
+		}
+	}
+
+	if _, err := writer.Write(data); err != nil {
+		return errSDK.Wrap(err)
+	}
+
+	return nil
+}
+
+func (sdk *StreamingAPI) commitStream(ctx context.Context, upload FileUploadV2, rootCID string, chunkCount int64) (_ FileMetaV2, err error) {
+	defer mon.Task()(&ctx, upload, rootCID, chunkCount)(&err)
 
 	res, err := sdk.client.FileUploadCommit(ctx, &pb.StreamFileUploadCommitRequest{
-		StreamId: upload.StreamID,
-		RootCid:  rootCID,
+		StreamId:   upload.StreamID,
+		RootCid:    rootCID,
+		ChunkCount: chunkCount,
 	})
 	if err != nil {
 		return FileMetaV2{}, errSDK.Wrap(err)
 	}
 
 	return FileMetaV2{
-		StreamID:   res.StreamId,
-		RootCID:    rootCID,
-		BucketID:   res.BucketId,
-		Name:       res.FileName,
-		Size:       res.FileSize,
-		CreatedAt:  upload.CreatedAt,
-		CommitedAt: res.CommittedAt.AsTime(),
+		StreamID:    res.StreamId,
+		RootCID:     rootCID,
+		BucketID:    res.BucketId,
+		Name:        res.FileName,
+		EncodedSize: res.EncodedSize,
+		Size:        res.Size,
+		CreatedAt:   upload.CreatedAt,
+		CommitedAt:  res.CommittedAt.AsTime(),
 	}, nil
 }
 
-func (sdk *StreamingAPI) uploadBlockV2(ctx context.Context, block *pb.StreamFileBlockData, sender func(*pb.StreamFileBlockData) error) (err error) {
+func (sdk *StreamingAPI) uploadBlock(ctx context.Context, block *pb.StreamFileBlockData, sender func(*pb.StreamFileBlockData) error) (err error) {
 	defer mon.Task()(&ctx, block.Cid, block.Index, block.Chunk.Cid, block.Chunk.Index, block.Chunk.StreamId)(&err)
 
 	data := block.Data
@@ -585,7 +817,7 @@ func (sdk *StreamingAPI) uploadBlockV2(ctx context.Context, block *pb.StreamFile
 	return nil
 }
 
-func toProtoChunk(streamID, cid string, index int64, blocks []FileBlock) *pb.Chunk {
+func toProtoChunk(streamID, cid string, index, size int64, blocks []FileBlock) *pb.Chunk {
 	pbBlocks := make([]*pb.Chunk_Block, len(blocks))
 	for i, block := range blocks {
 		pbBlocks[i] = &pb.Chunk_Block{
@@ -597,6 +829,26 @@ func toProtoChunk(streamID, cid string, index int64, blocks []FileBlock) *pb.Chu
 		StreamId: streamID,
 		Cid:      cid,
 		Index:    index,
+		Size:     size,
 		Blocks:   pbBlocks,
 	}
+}
+
+func toFileMeta(protoFile *pb.File, bucketName string) FileMetaV2 {
+	return FileMetaV2{
+		StreamID:    protoFile.StreamId,
+		RootCID:     protoFile.RootCid,
+		BucketID:    IDFromName(bucketName),
+		Name:        protoFile.Name,
+		EncodedSize: protoFile.EncodedSize,
+		Size:        protoFile.Size,
+		CreatedAt:   protoFile.CreatedAt.AsTime(),
+		CommitedAt:  protoFile.CommitedAt.AsTime(),
+	}
+}
+
+func IDFromName(bucketName string) string {
+	h := sha256.New()
+	h.Write([]byte(bucketName))
+	return string(h.Sum(nil))
 }

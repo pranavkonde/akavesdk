@@ -31,6 +31,33 @@ const (
 	secretKey      = "N1PCdw3M2B1TfJhoaY2mL736p2vCUc47"
 )
 
+func TestCreateSDKClient(t *testing.T) {
+	t.Run("invalid max blocks in chunk", func(t *testing.T) {
+		_, err := sdk.New("", maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithStreamingMaxBlocksInChunk(1))
+		require.Error(t, err)
+		require.Equal(t, "sdk: streaming max blocks in chunk 1 should be >= 2", err.Error())
+	})
+
+	t.Run("invalid erasure coding config", func(t *testing.T) {
+		_, err := sdk.New("", maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithErasureCoding(17))
+		require.Error(t, err)
+		require.Equal(t, "sdk: parity blocks count 17 should be <= 16", err.Error())
+
+		_, err = sdk.New("", maxConcurrency, blockPartSize.ToInt64(), true,
+			sdk.WithErasureCoding(40),
+			sdk.WithStreamingMaxBlocksInChunk(64),
+		)
+		require.Error(t, err)
+		require.Equal(t, "sdk: parity blocks count 40 should be <= 32", err.Error())
+	})
+
+	t.Run("invalid encryption key size", func(t *testing.T) {
+		_, err := sdk.New("", maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithEncryptionKey([]byte("short")))
+		require.Error(t, err)
+		require.Equal(t, "sdk: encyption key length should be 32 bytes long", err.Error())
+	})
+}
+
 func TestCreateBucket(t *testing.T) {
 	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
 	require.NoError(t, err)
@@ -122,44 +149,6 @@ func TestDeleteBucket(t *testing.T) {
 	require.Equal(t, codes.NotFound, st.Code())
 }
 
-func TestDeleteFile(t *testing.T) {
-	ctx := context.Background()
-
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, akave.Close())
-	})
-
-	bucketName := randomBucketName(t, 10)
-	_, err = akave.CreateBucket(ctx, bucketName)
-	require.NoError(t, err)
-
-	rootCID := uploadSimpleFile(ctx, t, akave, bucketName, "example.txt")
-
-	// check that file exists
-	fMeta, err := akave.FileInfo(ctx, bucketName, "example.txt")
-	require.NoError(t, err)
-	require.Equal(t, rootCID, fMeta.RootCID)
-	require.Equal(t, "example.txt", fMeta.Name)
-
-	// delete file
-	err = akave.FileDelete(ctx, bucketName, "example.txt")
-	require.NoError(t, err)
-
-	// check that file does not exist
-	_, err = akave.FileInfo(ctx, bucketName, "example.txt")
-	require.Error(t, err)
-	st, ok := status.FromError(err)
-	require.True(t, ok)
-	require.Equal(t, codes.NotFound, st.Code())
-
-	// check that list of files is empty
-	files, err := akave.ListFiles(ctx, bucketName)
-	require.NoError(t, err)
-	require.Empty(t, files)
-}
-
 func TestStreamDeleteFile(t *testing.T) {
 	ctx := context.Background()
 
@@ -200,76 +189,6 @@ func TestStreamDeleteFile(t *testing.T) {
 }
 
 // Less than or close to block size.
-func TestUploadDownloadSmallFiles(t *testing.T) {
-	tests := []struct {
-		name     string
-		fileSize int64 // Size in bytes
-	}{
-		{"127 Bytes", 127},
-		{"1 KB", 1 * memory.KB.ToInt64()},
-		{"1 MB", 1 * memory.MB.ToInt64()},
-		{"1 MiB", 1 * memory.MiB.ToInt64()},
-	}
-
-	t.Run("no encyption", func(t *testing.T) {
-		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-		require.NoError(t, err)
-		for _, tc := range tests {
-			t.Run(tc.name, func(t *testing.T) {
-				data := testrand.BytesD(t, 2024, tc.fileSize)
-				testUploadDownload(t, akave, data)
-			})
-		}
-	})
-
-	t.Run("with encyption", func(t *testing.T) {
-		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithEncryptionKey([]byte(secretKey)))
-		require.NoError(t, err)
-		for _, tc := range tests {
-			t.Run(tc.name, func(t *testing.T) {
-				data := testrand.BytesD(t, 2024, tc.fileSize)
-				testUploadDownload(t, akave, data)
-			})
-		}
-	})
-}
-
-// Less than or close to block size.
-func TestUploadDownloadSmallFilesV2(t *testing.T) {
-	tests := []struct {
-		name     string
-		fileSize int64 // Size in bytes
-	}{
-		{"127 Bytes", 127},
-		{"1 KB", 1 * memory.KB.ToInt64()},
-		{"1 MB", 1 * memory.MB.ToInt64()},
-		{"1 MiB", 1 * memory.MiB.ToInt64()},
-	}
-
-	t.Run("no encyption", func(t *testing.T) {
-		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-		require.NoError(t, err)
-		for _, tc := range tests {
-			t.Run(tc.name, func(t *testing.T) {
-				data := testrand.BytesD(t, 2024, tc.fileSize)
-				testUploadDownloadV2(t, akave, data)
-			})
-		}
-	})
-
-	t.Run("with encyption", func(t *testing.T) {
-		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithEncryptionKey([]byte(secretKey)))
-		require.NoError(t, err)
-		for _, tc := range tests {
-			t.Run(tc.name, func(t *testing.T) {
-				data := testrand.BytesD(t, 2024, tc.fileSize)
-				testUploadDownloadV2(t, akave, data)
-			})
-		}
-	})
-}
-
-// Less than or close to block size.
 func TestUploadDownloadStreamingSmallFiles(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -284,6 +203,10 @@ func TestUploadDownloadStreamingSmallFiles(t *testing.T) {
 	t.Run("no encyption", func(t *testing.T) {
 		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
 		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
+		})
+
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				data := testrand.BytesD(t, 2024, tc.fileSize)
@@ -295,6 +218,42 @@ func TestUploadDownloadStreamingSmallFiles(t *testing.T) {
 	t.Run("with encyption", func(t *testing.T) {
 		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithEncryptionKey([]byte(secretKey)))
 		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
+		})
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				data := testrand.BytesD(t, 2024, tc.fileSize)
+				testUploadDownloadStreamingAPI(t, akave, data)
+			})
+		}
+	})
+
+	t.Run("with erasure coding", func(t *testing.T) {
+		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithErasureCoding(16))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
+		})
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				data := testrand.BytesD(t, 2024, tc.fileSize)
+				testUploadDownloadStreamingAPI(t, akave, data)
+			})
+		}
+	})
+
+	t.Run("with erasure coding and encryption", func(t *testing.T) {
+		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true,
+			sdk.WithErasureCoding(16), sdk.WithEncryptionKey([]byte(secretKey)),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
+		})
+
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				data := testrand.BytesD(t, 2024, tc.fileSize)
@@ -304,67 +263,48 @@ func TestUploadDownloadStreamingSmallFiles(t *testing.T) {
 	})
 }
 
-// Greater than block size.
-func TestUploadDownload(t *testing.T) {
+func TestUploadRandomDownloadStreamingSmallFiles(t *testing.T) {
 	tests := []struct {
 		name     string
-		fileSize int64 // Size in MB
+		fileSize int64 // Size in bytes
 	}{
-		{"100 MB", 100},
-		{"256 MB", 256},
-		{"512 MB", 512},
-		{"1 GB", 1000},
+		{"127 Bytes", 127},
+		{"1 KB", 1 * memory.KB.ToInt64()},
+		{"1 MB", 1 * memory.MB.ToInt64()},
+		{"1 MiB", 1 * memory.MiB.ToInt64()},
 	}
 
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-	require.NoError(t, err)
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
-			testUploadDownload(t, akave, data)
+	t.Run("without encryption", func(t *testing.T) {
+		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithErasureCoding(16))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
 		})
-	}
-}
 
-// Test case when a file has the same blocks.
-func TestUploadDownloadSameBlocks(t *testing.T) {
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-	require.NoError(t, err)
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				data := testrand.BytesD(t, 2024, tc.fileSize)
+				testUploadRandomDownloadStreamingAPI(t, akave, data)
+			})
+		}
+	})
 
-	data := make([]byte, 10*memory.MB.ToInt64())
-	testUploadDownload(t, akave, data)
-}
-
-func TestUploadDownloadV2(t *testing.T) {
-	tests := []struct {
-		name     string
-		fileSize int64 // Size in MB
-	}{
-		{"100 MB", 100},
-		{"256 MB", 256},
-		{"512 MB", 512},
-		{"1 GB", 1000},
-	}
-
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-	require.NoError(t, err)
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
-			testUploadDownloadV2(t, akave, data)
+	t.Run("with encryption", func(t *testing.T) {
+		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true,
+			sdk.WithErasureCoding(16), sdk.WithEncryptionKey([]byte(secretKey)),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
 		})
-	}
-}
 
-// Test case when a file has the same blocks.
-func TestUploadDownloadV2SameBlocks(t *testing.T) {
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-	require.NoError(t, err)
-
-	data := make([]byte, 10*memory.MB.ToInt64())
-	testUploadDownloadV2(t, akave, data)
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				data := testrand.BytesD(t, 2024, tc.fileSize)
+				testUploadRandomDownloadStreamingAPI(t, akave, data)
+			})
+		}
+	})
 }
 
 // Greater than block size.
@@ -379,69 +319,112 @@ func TestUploadDownloadStreaming(t *testing.T) {
 		{"1 GB", 1000},
 	}
 
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-	require.NoError(t, err)
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
-			testUploadDownloadStreamingAPI(t, akave, data)
+	t.Run("without erasure coding", func(t *testing.T) {
+		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
 		})
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
+				testUploadDownloadStreamingAPI(t, akave, data)
+			})
+		}
+	})
+
+	t.Run("with erasure coding", func(t *testing.T) {
+		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithErasureCoding(16))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
+		})
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				if tc.fileSize > 256 {
+					t.Skip("skipping test because of large file size")
+				}
+				data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
+				testUploadDownloadStreamingAPI(t, akave, data)
+			})
+		}
+	})
+
+	t.Run("with erasure coding and encryption", func(t *testing.T) {
+		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true,
+			sdk.WithErasureCoding(16), sdk.WithEncryptionKey([]byte(secretKey)),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
+		})
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				if tc.fileSize > 256 {
+					t.Skip("skipping test because of large file size")
+				}
+				data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
+				testUploadDownloadStreamingAPI(t, akave, data)
+			})
+		}
+	})
+}
+
+func TestUploadRandomDownloadStreaming(t *testing.T) {
+	tests := []struct {
+		name     string
+		fileSize int64
+	}{
+		{"100 MB", 100},
+		{"256 MB", 256},
 	}
+
+	t.Run("without encryption", func(t *testing.T) {
+		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithErasureCoding(16))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
+		})
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
+				testUploadRandomDownloadStreamingAPI(t, akave, data)
+			})
+		}
+	})
+
+	t.Run("with encryption", func(t *testing.T) {
+		akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true,
+			sdk.WithErasureCoding(16), sdk.WithEncryptionKey([]byte(secretKey)),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, akave.Close())
+		})
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
+				testUploadRandomDownloadStreamingAPI(t, akave, data)
+			})
+		}
+	})
 }
 
 // Test case when a file has the same blocks.
 func TestUploadDownloadStreamingSameBlocks(t *testing.T) {
 	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, akave.Close())
+	})
 
 	data := make([]byte, 10*memory.MB.ToInt64())
 	testUploadDownloadStreamingAPI(t, akave, data)
-}
-
-// Greater than block size.
-func TestUploadDownloadWithEncryption(t *testing.T) {
-	tests := []struct {
-		name     string
-		fileSize int64 // Size in MB
-	}{
-		{"100 MB", 100},
-		{"256 MB", 256},
-		{"512 MB", 512},
-		{"1 GB", 1000},
-	}
-
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithEncryptionKey([]byte(secretKey)))
-	require.NoError(t, err)
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
-			testUploadDownload(t, akave, data)
-		})
-	}
-}
-
-func TestUploadDownloadV2WithEncryption(t *testing.T) {
-	tests := []struct {
-		name     string
-		fileSize int64 // Size in MB
-	}{
-		{"100 MB", 100},
-		{"256 MB", 256},
-		{"512 MB", 512},
-		{"1 GB", 1000},
-	}
-
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithEncryptionKey([]byte(secretKey)))
-	require.NoError(t, err)
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
-			testUploadDownloadV2(t, akave, data)
-		})
-	}
 }
 
 // Greater than block size.
@@ -458,6 +441,9 @@ func TestUploadDownloadStreamingWithEncryption(t *testing.T) {
 
 	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithEncryptionKey([]byte(secretKey)))
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, akave.Close())
+	})
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -467,48 +453,33 @@ func TestUploadDownloadStreamingWithEncryption(t *testing.T) {
 	}
 }
 
-func TestRangeDownload(t *testing.T) {
-	ctx := context.Background()
-	fileSize := 5 * memory.MB.ToInt64()
+func TestUploadDownloadIPC(t *testing.T) {
+	tests := []struct {
+		name     string
+		fileSize int64 // Size in MB
+	}{
+		{"1 MB", 1},
+		{"5 MB", 5},
+		{"15 MB", 15},
+		{"35 MB", 35},
+	}
 
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
+	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithPrivateKey(PickPrivateKey(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, akave.Close())
 	})
 
-	fileData := testrand.BytesD(t, 2024, fileSize)
+	ipc, err := akave.IPC()
 	require.NoError(t, err)
 
-	bucketName := randomBucketName(t, 10)
-	_, err = akave.CreateBucket(ctx, bucketName)
-	require.NoError(t, err)
-
-	fileUpload, err := akave.CreateFileUpload(ctx, bucketName, "example.txt", fileSize, bytes.NewBuffer(fileData))
-	require.NoError(t, err)
-
-	upResult := akave.Upload(ctx, fileUpload)
-	require.NoError(t, upResult)
-
-	var downloaded bytes.Buffer
-	fileDownload, err := akave.CreateRangeFileDownload(ctx, fileUpload.BucketName, "example.txt", 0, 2)
-	require.NoError(t, err)
-	require.True(t, len(fileDownload.Blocks) == 2)
-
-	// download file blocks
-	err = akave.Download(ctx, fileDownload, &downloaded)
-	require.NoError(t, err)
-
-	// check downloaded file contents with first 2 block content
-	fileDAG, err := sdk.BuildDAG(ctx, bytes.NewBuffer(fileData), sdk.BlockSize.ToInt64(), nil)
-	require.NoError(t, err)
-	blockData1, err := sdk.ExtractBlockData(fileDAG.Blocks[0].CID, fileDAG.Blocks[0].Data)
-	require.NoError(t, err)
-	blockData2, err := sdk.ExtractBlockData(fileDAG.Blocks[1].CID, fileDAG.Blocks[1].Data)
-	require.NoError(t, err)
-	expected := blockData1
-	expected = append(expected, blockData2...)
-	checkFileContents(t, 10, expected, downloaded.Bytes())
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// TODO: when BytesD used cause "block not found on any live peer" in CI, and block already exist locally. Find issue and fix.
+			data := testrand.Bytes(t, tc.fileSize*memory.MB.ToInt64())
+			testUploadDownloadIPC(t, ipc, data)
+		})
+	}
 }
 
 func TestStreamingRangeDownload(t *testing.T) {
@@ -521,6 +492,7 @@ func TestStreamingRangeDownload(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, akave.Close())
 	})
+
 	streamingAPI := akave.StreamingAPI()
 
 	fileData := testrand.BytesD(t, 2024, fileSize)
@@ -552,46 +524,6 @@ func TestStreamingRangeDownload(t *testing.T) {
 	checkFileContents(t, 10, expected, downloaded.Bytes())
 }
 
-func testUploadDownload(t *testing.T, akave *sdk.SDK, data []byte) {
-	file := bytes.NewBuffer(data)
-
-	bucketName := randomBucketName(t, 10)
-	_, err := akave.CreateBucket(context.Background(), bucketName)
-	require.NoError(t, err)
-
-	now := time.Now()
-	fileUpload, err := akave.CreateFileUpload(context.Background(), bucketName, "example.txt", int64(len(data)), file)
-	require.NoError(t, err)
-	fileUploadDuration := time.Since(now)
-	t.Logf("Create file upload duration: %v", fileUploadDuration)
-
-	require.Equal(t, bucketName, fileUpload.BucketName)
-	require.Equal(t, "example.txt", fileUpload.FileName)
-	require.Equal(t, int64(len(data)), fileUpload.FileSize)
-	require.Greater(t, len(fileUpload.Blocks), 0)
-	require.NotEmpty(t, fileUpload.RootCID)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	now = time.Now()
-	upResult := akave.Upload(ctx, fileUpload)
-	require.NoError(t, upResult)
-	t.Logf("Upload duration: %v", time.Since(now))
-
-	var downloaded bytes.Buffer
-	fileDownload, err := akave.CreateFileDownload(context.Background(), fileUpload.BucketName, fileUpload.FileName)
-	require.NoError(t, err)
-	require.True(t, len(fileDownload.Blocks) > 0)
-
-	now = time.Now()
-	err = akave.Download(ctx, fileDownload, &downloaded)
-	require.NoError(t, err)
-	t.Logf("Download duration: %v", time.Since(now))
-
-	checkFileContents(t, 10, data, downloaded.Bytes())
-}
-
 func testUploadDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []byte) {
 	file := bytes.NewBuffer(data)
 
@@ -607,7 +539,7 @@ func testUploadDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []byte) {
 	now := time.Now()
 	fileUpload, err := streaming.CreateFileUpload(ctx, bucketName, "example.txt")
 	require.NoError(t, err)
-	assert.Equal(t, sdk.BucketIDFromName(bucketName), fileUpload.BucketID)
+	assert.Equal(t, sdk.IDFromName(bucketName), fileUpload.BucketID)
 	assert.Equal(t, "example.txt", fileUpload.Name)
 	assert.GreaterOrEqual(t, fileUpload.CreatedAt.UnixNano(), now.UnixNano())
 	assert.NotEmpty(t, fileUpload.StreamID)
@@ -622,17 +554,23 @@ func testUploadDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []byte) {
 	assert.NotEmpty(t, fileMeta.RootCID)
 	assert.Equal(t, fileUpload.BucketID, fileMeta.BucketID)
 	assert.Equal(t, fileUpload.Name, fileMeta.Name)
-	assert.GreaterOrEqual(t, fileMeta.Size, int64(len(data))) // encrypted file size is larger
+	assert.Greater(t, fileMeta.EncodedSize, int64(len(data)))
+	assert.True(t, (fileMeta.Size-int64(len(data)))%sdk.EncryptionOverhead == 0)
 	assert.LessOrEqual(t, fileMeta.CreatedAt.UnixNano(), now.UnixNano())
 	assert.GreaterOrEqual(t, fileMeta.CommitedAt.UnixNano(), fileMeta.CreatedAt.UnixNano())
 
 	var downloaded bytes.Buffer
-	fileDownload, err := streaming.CreateFileDownload(ctx, bucketName, fileUpload.Name)
+	fileDownload, err := streaming.CreateFileDownload(ctx, bucketName, fileUpload.Name, "")
 	require.NoError(t, err)
 	assert.Equal(t, fileUpload.StreamID, fileDownload.StreamID)
 	assert.Equal(t, fileUpload.Name, fileDownload.Name)
 	assert.Equal(t, fileUpload.BucketID, fileDownload.BucketID)
 	require.True(t, len(fileDownload.Chunks) > 0)
+	size := int64(0)
+	for _, chunk := range fileDownload.Chunks {
+		size += chunk.Size
+	}
+	assert.Equal(t, size, fileMeta.Size)
 
 	now = time.Now()
 	err = streaming.Download(ctx, fileDownload, &downloaded)
@@ -642,100 +580,105 @@ func testUploadDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []byte) {
 	checkFileContents(t, 10, data, downloaded.Bytes())
 }
 
-// Checks that encrypted file is not the same as unencrypted file.
-func TestUploadDownloadEncryption(t *testing.T) {
-	fileSize := 10 * memory.MB.ToInt64()
+func testUploadRandomDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []byte) {
+	file := bytes.NewBuffer(data)
 
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-	require.NoError(t, err)
-
-	akaveEnc, err := sdk.New(
-		PickNodeRPCAddress(t),
-		maxConcurrency,
-		blockPartSize.ToInt64(),
-		true,
-		sdk.WithEncryptionKey([]byte(secretKey)),
-	)
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		require.NoError(t, akave.Close())
-		require.NoError(t, akaveEnc.Close())
-	})
-
-	file := bytes.NewBuffer(testrand.BytesD(t, 2024, fileSize))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	bucketName := randomBucketName(t, 10)
-	// create bucket
-	_, err = akave.CreateBucket(context.Background(), bucketName)
+	_, err := akave.CreateBucket(ctx, bucketName)
 	require.NoError(t, err)
 
-	fileUpload, err := akaveEnc.CreateFileUpload(context.Background(), bucketName, "example.txt", fileSize, file)
+	streaming := akave.StreamingAPI()
+
+	now := time.Now()
+	fileUpload, err := streaming.CreateFileUpload(ctx, bucketName, "example.txt")
+	require.NoError(t, err)
+	assert.Equal(t, sdk.IDFromName(bucketName), fileUpload.BucketID)
+	assert.Equal(t, "example.txt", fileUpload.Name)
+	assert.GreaterOrEqual(t, fileUpload.CreatedAt.UnixNano(), now.UnixNano())
+	assert.NotEmpty(t, fileUpload.StreamID)
+	_, err = uuid.Parse(fileUpload.StreamID)
 	require.NoError(t, err)
 
-	upResult := akaveEnc.Upload(context.Background(), fileUpload)
-	require.NoError(t, upResult)
+	now = time.Now()
+	fileMeta, err := streaming.Upload(ctx, fileUpload, file)
+	require.NoError(t, err)
+	t.Logf("Upload duration: %v", time.Since(now))
+	assert.Equal(t, fileUpload.StreamID, fileMeta.StreamID)
+	assert.NotEmpty(t, fileMeta.RootCID)
+	assert.Equal(t, fileUpload.BucketID, fileMeta.BucketID)
+	assert.Equal(t, fileUpload.Name, fileMeta.Name)
+	assert.Greater(t, fileMeta.EncodedSize, int64(len(data)))
+	assert.True(t, (fileMeta.Size-int64(len(data)))%sdk.EncryptionOverhead == 0)
+	assert.LessOrEqual(t, fileMeta.CreatedAt.UnixNano(), now.UnixNano())
+	assert.GreaterOrEqual(t, fileMeta.CommitedAt.UnixNano(), fileMeta.CreatedAt.UnixNano())
 
 	var downloaded bytes.Buffer
-	fileDownload, err := akave.CreateFileDownload(context.Background(), fileUpload.BucketName, "example.txt")
+	fileDownload, err := streaming.CreateFileDownload(ctx, bucketName, fileUpload.Name, "")
+	require.NoError(t, err)
+	assert.Equal(t, fileUpload.StreamID, fileDownload.StreamID)
+	assert.Equal(t, fileUpload.Name, fileDownload.Name)
+	assert.Equal(t, fileUpload.BucketID, fileDownload.BucketID)
+	require.True(t, len(fileDownload.Chunks) > 0)
+	size := int64(0)
+	for _, chunk := range fileDownload.Chunks {
+		size += chunk.Size
+	}
+	assert.Equal(t, size, fileMeta.Size)
+
+	now = time.Now()
+	err = streaming.DownloadRandom(ctx, fileDownload, &downloaded)
+	require.NoError(t, err)
+	t.Logf("Download duration: %v", time.Since(now))
+
+	checkFileContents(t, 10, data, downloaded.Bytes())
+}
+
+func testUploadDownloadIPC(t *testing.T, ipc *sdk.IPC, data []byte) {
+	file := bytes.NewBuffer(data)
+
+	bucketName := randomBucketName(t, 10)
+	_, err := ipc.CreateBucket(context.Background(), bucketName)
+	require.NoError(t, err)
+
+	now := time.Now()
+	fileUpload, err := ipc.CreateFileUpload(context.Background(), bucketName, "example.txt", int64(len(data)), file)
+	require.NoError(t, err)
+	fileUploadDuration := time.Since(now)
+	t.Logf("Create file upload duration: %v", fileUploadDuration)
+
+	require.Equal(t, bucketName, fileUpload.BucketName)
+	require.Equal(t, "example.txt", fileUpload.FileName)
+	require.Equal(t, int64(len(data)), fileUpload.FileSize)
+	require.Greater(t, len(fileUpload.Blocks), 0)
+	require.NotEmpty(t, fileUpload.RootCID)
+
+	time.Sleep(5 * time.Second)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	now = time.Now()
+	upResult := ipc.Upload(ctx, fileUpload)
+	require.NoError(t, upResult)
+	t.Logf("Upload duration: %v", time.Since(now))
+
+	time.Sleep(5 * time.Second)
+
+	var downloaded bytes.Buffer
+	fileDownload, err := ipc.CreateFileDownload(context.Background(), fileUpload.BucketName, fileUpload.FileName)
 	require.NoError(t, err)
 	require.True(t, len(fileDownload.Blocks) > 0)
 
-	// download file blocks
-	err = akave.Download(context.Background(), fileDownload, &downloaded)
-	require.NoError(t, err)
+	time.Sleep(5 * time.Second)
 
-	expected := testrand.BytesD(t, 2024, fileSize)
-	checkFileContentsNot(t, 10, expected, downloaded.Bytes())
-}
+	now = time.Now()
+	require.NoError(t, ipc.Download(ctx, fileDownload, &downloaded))
+	t.Logf("Download duration: %v", time.Since(now))
 
-func TestUploadFileTooLarge(t *testing.T) {
-	fileSize := 2 * memory.GiB.ToInt64()
-
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-	require.NoError(t, err)
-
-	bucketName := randomBucketName(t, 10)
-	_, err = akave.CreateBucket(context.Background(), bucketName)
-	require.NoError(t, err)
-
-	_, err = akave.CreateFileUpload(context.Background(), bucketName, "example.txt", fileSize, nil)
-	require.Error(t, err)
-	require.Equal(t, "sdk: file size is too large", err.Error())
-}
-
-func TestListFiles(t *testing.T) {
-	ctx := context.Background()
-
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, akave.Close())
-	})
-
-	bucketName := randomBucketName(t, 10)
-	_, err = akave.CreateBucket(ctx, bucketName)
-	require.NoError(t, err)
-
-	expected := make([]sdk.FileListItem, 0)
-	for _, fileName := range []string{"foo", "bar", "baz"} {
-		rootCID := uploadSimpleFile(ctx, t, akave, bucketName, fileName)
-
-		expected = append(expected, sdk.FileListItem{
-			RootCID: rootCID,
-			Name:    fileName,
-			Size:    2 * memory.MB.ToInt64(),
-		})
-	}
-
-	list, err := akave.ListFiles(ctx, bucketName)
-	require.NoError(t, err)
-	// TODO: look for better solution
-	for i, file := range list {
-		require.WithinDuration(t, time.Now(), file.CreatedAt, 5*time.Second)
-		list[i].CreatedAt = time.Time{}
-	}
-	require.ElementsMatch(t, expected, list)
+	checkFileContents(t, 10, data, downloaded.Bytes())
 }
 
 func TestStreamListFiles(t *testing.T) {
@@ -756,13 +699,14 @@ func TestStreamListFiles(t *testing.T) {
 		fm := uploadSimpleFileStream(ctx, t, akave, bucketName, fileName)
 
 		expected = append(expected, sdk.FileMetaV2{
-			StreamID:   fm.StreamID,
-			RootCID:    fm.RootCID,
-			BucketID:   sdk.BucketIDFromName(bucketName),
-			Name:       fileName,
-			Size:       fm.Size,
-			CreatedAt:  fm.CreatedAt,
-			CommitedAt: fm.CommitedAt,
+			StreamID:    fm.StreamID,
+			RootCID:     fm.RootCID,
+			BucketID:    sdk.IDFromName(bucketName),
+			Name:        fileName,
+			EncodedSize: fm.EncodedSize,
+			Size:        fm.Size,
+			CreatedAt:   fm.CreatedAt,
+			CommitedAt:  fm.CommitedAt,
 		})
 	}
 
@@ -771,23 +715,25 @@ func TestStreamListFiles(t *testing.T) {
 	require.ElementsMatch(t, expected, list)
 }
 
-func TestFileInfo(t *testing.T) {
+func TestStreamFileVersions(t *testing.T) {
 	ctx := context.Background()
-	bucketName := randomBucketName(t, 10)
 
 	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, akave.Close())
+	})
+
+	bucketName := randomBucketName(t, 10)
 	_, err = akave.CreateBucket(ctx, bucketName)
 	require.NoError(t, err)
 
-	rootCID := uploadSimpleFile(ctx, t, akave, bucketName, "example.txt")
+	fm1 := uploadSimpleFileStream(ctx, t, akave, bucketName, "foo.txt")
+	fm2 := uploadSimpleFileStream(ctx, t, akave, bucketName, "foo.txt")
 
-	info, err := akave.FileInfo(ctx, bucketName, "example.txt")
+	list, err := akave.StreamingAPI().FileVersions(ctx, bucketName, "foo.txt")
 	require.NoError(t, err)
-	require.Equal(t, rootCID, info.RootCID)
-	require.Equal(t, info.Name, "example.txt")
-	require.Equal(t, info.Size, 2*memory.MB.ToInt64())
-	require.WithinDuration(t, time.Now(), info.CreatedAt, 5*time.Second)
+	assert.Equal(t, []sdk.FileMetaV2{fm2, fm1}, list)
 }
 
 func TestStreamFileInfo(t *testing.T) {
@@ -796,6 +742,10 @@ func TestStreamFileInfo(t *testing.T) {
 
 	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, akave.Close())
+	})
+
 	_, err = akave.CreateBucket(ctx, bucketName)
 	require.NoError(t, err)
 
@@ -804,57 +754,6 @@ func TestStreamFileInfo(t *testing.T) {
 	info, err := akave.StreamingAPI().FileInfo(ctx, bucketName, "example.txt")
 	require.NoError(t, err)
 	require.Equal(t, filemeta, info)
-}
-
-func testUploadDownloadV2(t *testing.T, akave *sdk.SDK, data []byte) {
-	file := bytes.NewBuffer(data)
-
-	bucketName := randomBucketName(t, 10)
-	_, err := akave.CreateBucket(context.Background(), bucketName)
-	require.NoError(t, err)
-
-	now := time.Now()
-	fileUpload, err := akave.CreateFileUpload(context.Background(), bucketName, "example.txt", int64(len(data)), file)
-	require.NoError(t, err)
-	fileUploadDuration := time.Since(now)
-	t.Logf("Create file upload duration: %v", fileUploadDuration)
-
-	require.Equal(t, bucketName, fileUpload.BucketName)
-	require.Equal(t, "example.txt", fileUpload.FileName)
-	require.Equal(t, int64(len(data)), fileUpload.FileSize)
-	require.Greater(t, len(fileUpload.Blocks), 0)
-	require.NotEmpty(t, fileUpload.RootCID)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	now = time.Now()
-	upResult := akave.Upload(ctx, fileUpload)
-	require.NoError(t, upResult)
-	t.Logf("Upload duration: %v", time.Since(now))
-
-	var downloaded bytes.Buffer
-	fileDownload, err := akave.CreateFileDownloadV2(context.Background(), fileUpload.BucketName, fileUpload.FileName)
-	require.NoError(t, err)
-	require.True(t, len(fileDownload.Blocks) > 0)
-
-	now = time.Now()
-	err = akave.DownloadV2(ctx, fileDownload, &downloaded)
-	require.NoError(t, err)
-	t.Logf("Download duration: %v", time.Since(now))
-
-	checkFileContents(t, 10, data, downloaded.Bytes())
-}
-
-func uploadSimpleFile(ctx context.Context, t *testing.T, akave *sdk.SDK, bucket string, fileName string) string {
-	f := generateAny2MBFile(t)
-
-	upload, err := akave.CreateFileUpload(ctx, bucket, fileName, 2*memory.MB.ToInt64(), f)
-	require.NoError(t, err)
-	err = akave.Upload(ctx, upload)
-	require.NoError(t, err)
-
-	return upload.RootCID
 }
 
 func uploadSimpleFileStream(ctx context.Context, t *testing.T, akave *sdk.SDK, bucket string, fileName string) sdk.FileMetaV2 {
@@ -896,8 +795,12 @@ func randomBucketName(t require.TestingT, size int) string {
 	return hex.EncodeToString(b)
 }
 
-// NodeRPCAddress is flag to set RPC address of akave node.
-var NodeRPCAddress = flag.String("node-rpc-address", os.Getenv("NODE_RPC_ADDRESS"), "flag to set node rpc address")
+var (
+	// NodeRPCAddress is flag to set RPC address of akave node.
+	NodeRPCAddress = flag.String("node-rpc-address", os.Getenv("NODE_RPC_ADDRESS"), "flag to set node rpc address")
+	// PrivateKey is flag set to private key.
+	PrivateKey = flag.String("sdk-private-key", os.Getenv("PRIVATE_KEY"), "flag to set private key")
+)
 
 // PickNodeRPCAddress picks node PRC address from flag.
 func PickNodeRPCAddress(t testing.TB) string {
@@ -905,6 +808,14 @@ func PickNodeRPCAddress(t testing.TB) string {
 		t.Skip("node rpc address flag missing, example: -NODE_RPC_ADDRESS=<node rpc address>")
 	}
 	return *NodeRPCAddress
+}
+
+// PickPrivateKey picks hex private key of deployer.
+func PickPrivateKey(t testing.TB) string {
+	if *PrivateKey == "" || strings.EqualFold(*PrivateKey, "omit") {
+		t.Skip("private key flag missing, example: -PRIVATE_KEY=<deployers hex private key>")
+	}
+	return *PrivateKey
 }
 
 // checks lengths, first and last N bytes.
@@ -915,14 +826,4 @@ func checkFileContents(t *testing.T, n int, expected, actual []byte) {
 	require.EqualValues(t, expected[:n], actual[:n])
 	// check last 10 bytes
 	require.EqualValues(t, expected[len(expected)-n:], actual[len(actual)-n:])
-}
-
-// checks lengths, first and last N bytes, expects them to be different.
-func checkFileContentsNot(t *testing.T, n int, expected, actual []byte) {
-	t.Helper()
-	require.NotEqual(t, len(expected), len(actual))
-	// check first 10 bytes
-	require.NotEqualValues(t, expected[:n], actual[:n])
-	// check last 10 bytes
-	require.NotEqualValues(t, expected[len(expected)-n:], actual[len(actual)-n:])
 }

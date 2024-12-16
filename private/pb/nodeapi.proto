@@ -12,19 +12,6 @@ service NodeAPI {
   rpc BucketView (BucketViewRequest) returns (BucketViewResponse) {}
   rpc BucketList (BucketListRequest) returns (BucketListResponse) {}
   rpc BucketDelete (BucketDeleteRequest) returns (BucketDeleteResponse) {}
-  // File APIs.
-  rpc FileUploadCreate (FileUploadCreateRequest) returns (FileUploadCreateResponse) {}
-  rpc FileUploadBlock (stream FileBlockData) returns (FileUploadBlockResponse) {}
-  rpc FileView (FileViewRequest) returns (FileViewResponse) {}
-  rpc FileDownloadCreate (FileDownloadCreateRequest) returns (FileDownloadCreateResponse) {}
-  rpc FileDownloadCreateV2 (FileDownloadCreateRequestV2) returns (FileDownloadCreateResponseV2) {}
-  rpc FileDownload (FileDownloadRequest) returns (FileDownloadResponse) {}
-  rpc FileDownloadRangeCreate (FileDownloadRangeCreateRequest) returns (FileDownloadCreateResponse) {}
-  rpc FileDownloadBlock (FileDownloadBlockRequest) returns (stream FileBlockData) {}
-  rpc FileList (FileListRequest) returns (FileListResponse) {}
-  rpc FileKeys (FileKeysRequest) returns (FileKeysResponse) {}
-  rpc FileUpdateCreate (FileUpdateCreateRequest) returns (FileUpdateCreateResponse) {}
-  rpc FileDelete (FileDeleteRequest) returns (FileDeleteResponse) {}
 }
 
 message BucketCreateRequest {
@@ -61,137 +48,10 @@ message BucketDeleteRequest {
 }
 message BucketDeleteResponse {}
 
-message FileUploadCreateRequest {
-  string bucket_name = 1;
-  string file_name = 2;
-  string root_cid = 3;
-  repeated Block blocks = 4;
-  int64 size = 5;
-
-  message Block {
-    string cid = 1;
-    int64 size = 2;
-  }
-}
-
-message FileUploadCreateResponse {
-  repeated BlockUpload blocks = 1;
-
-  message BlockUpload {
-    string cid = 1;
-    int64 size = 2;
-    string node_address = 3;
-    string node_id = 4;
-    string permit = 5;
-  }
-}
-
 message FileBlockData {
   bytes data = 1;
   string cid = 2;
 }
-
-message FileUploadBlockResponse {}
-
-message FileViewRequest {
-  string bucket_name = 1;
-  string file_name = 2;
-}
-message FileViewResponse {
-  string bucket_id = 1;
-  string file_name = 2;
-  string root_cid = 3;
-  int64 size = 4;
-  google.protobuf.Timestamp created_at = 5;
-}
-
-message FileDownloadRequest {}
-message FileDownloadResponse {}
-
-message FileDownloadCreateRequest {
-  string bucket_name = 1;
-  string file_name = 2;
-}
-
-message FileDownloadRangeCreateRequest {
-  string bucket_name = 1;
-  string file_name = 2;
-  int64 start = 3;
-  int64 end = 4;
-}
-
-message FileDownloadCreateResponse {
-  repeated BlockDownload blocks = 1;
-
-  message BlockDownload {
-    string cid = 1;
-    int64 size = 2;
-    string node_address = 3;
-    string node_id = 4;
-    string permit = 5;
-  }
-}
-
-message FileDownloadCreateRequestV2 {
-  string bucket_name = 1;
-  string file_name = 2;
-}
-
-message FileDownloadCreateResponseV2 {
-  repeated BlockDownloadV2 blocks = 1;
-
-  message BlockDownloadV2 {
-    string cid = 1;
-    int64 size = 2;
-
-    oneof source {
-      Akavenode node_block = 3;
-      FilecoinSP service_provider_block = 4;
-    }
-  }
-
-  message Akavenode {
-    string node_address = 1;
-    string node_id = 2;
-    string permit = 3;
-  }
-
-  message FilecoinSP {
-    string sp_address = 1;
-    string sp_id = 2;
-  }
-}
-
-message FileDownloadBlockRequest {
-  string block_cid = 1;
-}
-
-message FileListRequest {
-  string bucket_name = 1;
-}
-
-message FileListResponse {
-  repeated File list = 1;
-
-  message File {
-    string root_cid = 1;
-    string name = 2;
-    int64 size = 3;
-    google.protobuf.Timestamp created_at = 4;
-  }
-}
-
-message FileKeysRequest {}
-message FileKeysResponse {}
-message FileUpdateCreateRequest {}
-message FileUpdateCreateResponse {}
-
-message FileDeleteRequest {
-  string bucket_name = 1;
-  string file_name = 2;
-}
-
-message FileDeleteResponse {}
 
 // Stream APIs.
 service StreamAPI {
@@ -205,6 +65,7 @@ service StreamAPI {
   rpc FileDownloadBlock (StreamFileDownloadBlockRequest) returns (stream StreamFileBlockData) {}
   rpc FileList (StreamFileListRequest) returns (StreamFileListResponse) {}
   rpc FileView (StreamFileViewRequest) returns (StreamFileViewResponse) {}
+  rpc FileVersions (StreamFileListVersionsRequest) returns (StreamFileListVersionsResponse) {}
   rpc FileDelete (StreamFileDeleteRequest) returns (StreamFileDeleteResponse) {}
 }
 
@@ -223,7 +84,8 @@ message Chunk {
   string stream_id = 1; 
   string cid = 2; 
   int64 index = 3; 
-  repeated Block blocks = 4;
+  int64 size = 4;
+  repeated Block blocks = 5;
 
   message Block {
     string cid = 1;
@@ -257,18 +119,21 @@ message StreamFileUploadBlockResponse {}
 message StreamFileUploadCommitRequest {
   string stream_id = 1;
   string root_cid = 2;
+  int64 chunk_count = 3;
 }
 message StreamFileUploadCommitResponse {
   string stream_id = 1;
   string file_name = 2;
   string bucket_id = 3;
-  int64 file_size = 4;
-  google.protobuf.Timestamp committed_at = 5;
+  int64 encoded_size = 4;
+  int64 size = 5;
+  google.protobuf.Timestamp committed_at = 6;
 }
 
 message StreamFileDownloadCreateRequest {
   string bucket_name = 1;
   string file_name = 2;
+  string root_cid = 3; // optional
 }
 message StreamFileDownloadCreateResponse {
   string bucket_id = 1;
@@ -277,7 +142,8 @@ message StreamFileDownloadCreateResponse {
 
   message Chunk {
     string cid = 1;
-    int64 size = 2;
+    int64 encoded_size = 2;
+    int64 size = 3;
   }
 }
 
@@ -316,17 +182,18 @@ message StreamFileListRequest {
   string bucket_name = 1;
 }
 
+message File {
+  string stream_id = 1;
+  string root_cid = 2;
+  string name = 3;
+  int64 encoded_size = 4;
+  int64 size = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp commited_at = 7;
+}
+
 message StreamFileListResponse {
   repeated File files = 1;
-
-  message File {
-    string stream_id = 1;
-    string root_cid = 2;
-    string name = 3;
-    int64 size = 4;
-    google.protobuf.Timestamp created_at = 5;
-    google.protobuf.Timestamp commited_at = 6;
-  }
 }
 
 message StreamFileViewRequest {
@@ -339,9 +206,10 @@ message StreamFileViewResponse {
   string file_name = 2;
   string stream_id = 3;
   string root_cid = 4;
-  int64 size = 5;
-  google.protobuf.Timestamp created_at = 6;
-  google.protobuf.Timestamp committed_at = 7;
+  int64 encoded_size = 5;
+  int64 size = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp committed_at = 8;
 }
 
 message StreamFileDeleteRequest {
@@ -350,3 +218,12 @@ message StreamFileDeleteRequest {
 }
 
 message StreamFileDeleteResponse {}
+
+message StreamFileListVersionsRequest {
+  string bucket_name = 1;
+  string file_name = 2;
+}
+
+message StreamFileListVersionsResponse {
+  repeated File versions = 1;
+}

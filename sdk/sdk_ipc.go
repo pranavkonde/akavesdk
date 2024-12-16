@@ -316,8 +316,8 @@ func (sdk *IPC) Upload(ctx context.Context, fileUpload FileUpload) (err error) {
 	}()
 
 	for i, block := range fileUpload.Blocks {
-		i, block := i, block
 		deriveCtx := context.WithoutCancel(ctx)
+
 		g.Go(func() (err error) {
 			defer mon.Task()(&deriveCtx, block.CID)(&err)
 
@@ -347,7 +347,7 @@ func (sdk *IPC) Upload(ctx context.Context, fileUpload FileUpload) (err error) {
 				Data: block.Data,
 				Cid:  block.CID,
 			}, sender.Send)
-			if err != nil {
+			if err != nil && !errors.Is(err, io.EOF) {
 				return err
 			}
 
@@ -450,8 +450,8 @@ func (sdk *IPC) Download(ctx context.Context, fileDownload FileDownload, writer 
 	}
 
 	for i, block := range fileDownload.Blocks {
-		i, block := i, block
 		deriveCtx := context.WithoutCancel(ctx)
+
 		g.Go(func() (err error) {
 			defer mon.Task()(&deriveCtx, block.CID)(&err)
 
