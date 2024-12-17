@@ -5,7 +5,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
 	"flag"
 	"fmt"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"akave.ai/akavesdk/private/memory"
+	"akave.ai/akavesdk/private/testrand"
 )
 
 type testCase struct {
@@ -38,8 +38,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestCreateBucketCommand(t *testing.T) {
-	bucketName, err := randString(10)
-	require.NoError(t, err)
+	bucketName := testrand.String(10)
 	nodeAddress := PickNodeRPCAddress(t)
 	testCases := []testCase{
 		{
@@ -86,8 +85,7 @@ func TestCreateBucketCommand(t *testing.T) {
 }
 
 func TestIPCCreateBucketCommand(t *testing.T) {
-	bucketName, err := randString(10)
-	require.NoError(t, err)
+	bucketName := testrand.String(10)
 	nodeAddress := PickNodeRPCAddress(t)
 	privateKey := PickPrivateKey(t)
 
@@ -142,10 +140,9 @@ func TestIPCCreateBucketCommand(t *testing.T) {
 }
 
 func TestDeleteBucketCommand(t *testing.T) {
-	bucketName, err := randString(10)
-	require.NoError(t, err)
+	bucketName := testrand.String(10)
 	nodeAddress := PickNodeRPCAddress(t)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
+	_, _, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
 	require.NoError(t, err)
 	testCases := []testCase{
 		{
@@ -192,12 +189,11 @@ func TestDeleteBucketCommand(t *testing.T) {
 }
 
 func TestIPCDeleteBucketCommand(t *testing.T) {
-	bucketName, err := randString(10)
-	require.NoError(t, err)
+	bucketName := testrand.String(10)
 	nodeAddress := PickNodeRPCAddress(t)
 	privateKey := PickPrivateKey(t)
 
-	_, _, err = captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName})
+	_, _, err := captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName})
 	require.NoError(t, err)
 	testCases := []testCase{
 		{
@@ -245,8 +241,7 @@ func TestIPCDeleteBucketCommand(t *testing.T) {
 
 func TestViewBucketCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
+	bucketName := testrand.String(10)
 	_, stderr, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 	bucketID, err := extractBucketID(stderr)
@@ -294,8 +289,7 @@ func TestIPCViewBucketCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
 	privateKey := PickPrivateKey(t)
 
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
+	bucketName := testrand.String(10)
 	_, stderr, err := captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName})
 	assert.NoError(t, err)
 	bucketID, err := extractBucketID(stderr)
@@ -347,14 +341,13 @@ func TestIPCViewBucketCommand(t *testing.T) {
 
 func TestListBucketsCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
-	bucketName1, err := randString(10)
-	assert.NoError(t, err)
+	bucketName1 := testrand.String(10)
 	_, stderr, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName1, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 	bucketID1, err := extractBucketID(stderr)
 	assert.NoError(t, err)
 
-	bucketName2, err := randString(10)
+	bucketName2 := testrand.String(10)
 	assert.NoError(t, err)
 	_, stderr, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName2, "--node-address", nodeAddress})
 	assert.NoError(t, err)
@@ -387,14 +380,13 @@ func TestIPCListBucketsCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
 	privateKey := PickPrivateKey(t)
 
-	bucketName1, err := randString(10)
-	assert.NoError(t, err)
+	bucketName1 := testrand.String(10)
 	_, stderr, err := captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName1})
 	assert.NoError(t, err)
 	bucketID1, err := extractBucketID(stderr)
 	assert.NoError(t, err)
 
-	bucketName2, err := randString(10)
+	bucketName2 := testrand.String(10)
 	assert.NoError(t, err)
 	_, stderr, err = captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName2})
 	assert.NoError(t, err)
@@ -423,68 +415,12 @@ func TestIPCListBucketsCommand(t *testing.T) {
 	})
 }
 
-func TestListFilesCommand(t *testing.T) {
-	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-
-	file1, err := createTempFile(t, 2*memory.MB.ToInt64())
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"file", "upload", bucketName, file1, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-
-	file2, err := createTempFile(t, 2*memory.MB.ToInt64())
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"file", "upload", bucketName, file2, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-
-	testCases := []testCase{
-		{
-			name:           "List files successfully",
-			args:           []string{"file", "list", bucketName, "--node-address", nodeAddress},
-			expectedOutput: []string{fmt.Sprintf("File: Name=%s", filepath.Base(file1)), fmt.Sprintf("File: Name=%s", filepath.Base(file2))},
-			expectError:    false,
-		},
-		{
-			name:           "List files for non-existent bucket",
-			args:           []string{"file", "list", "nonexistent-bucket", "--node-address", nodeAddress},
-			expectedOutput: []string{"failed to list files: sdk: rpc error: code = NotFound"},
-			expectError:    true,
-		},
-		{
-			name:           "Bucket name not provided",
-			args:           []string{"file", "list", "", "--node-address", nodeAddress},
-			expectedOutput: []string{"bucket name is required"},
-			expectError:    true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			stdout, stderr, err := captureCobraOutput(rootCmd, tc.args)
-
-			if tc.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-
-			for _, expected := range tc.expectedOutput {
-				assert.Contains(t, stdout+stderr, expected)
-			}
-		})
-	}
-}
-
 func TestIPCListFilesCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
 	privateKey := PickPrivateKey(t)
 
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"ipc", "bucket", "create", "--private-key", privateKey, bucketName, "--node-address", nodeAddress})
+	bucketName := testrand.String(10)
+	_, _, err := captureCobraOutput(rootCmd, []string{"ipc", "bucket", "create", "--private-key", privateKey, bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	file1, err := createTempFile(t, 2*memory.MB.ToInt64())
@@ -543,9 +479,8 @@ func TestIPCListFilesCommand(t *testing.T) {
 
 func TestStreamingListFilesCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
+	bucketName := testrand.String(10)
+	_, _, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	file1, err := createTempFile(t, 2*memory.MB.ToInt64())
@@ -597,43 +532,32 @@ func TestStreamingListFilesCommand(t *testing.T) {
 	}
 }
 
-func TestFileInfoCommand(t *testing.T) {
+func TestStreamingFileVersionsCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
+	bucketName := testrand.String(10)
+	_, _, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
-	file, err := createTempFile(t, 2*memory.MB.ToInt64())
+	file1, err := createTempFile(t, 2*memory.MB.ToInt64())
 	assert.NoError(t, err)
-	_, stderr, err := captureCobraOutput(rootCmd, []string{"file", "upload", bucketName, file, "--node-address", nodeAddress})
+
+	_, _, err = captureCobraOutput(rootCmd, []string{"files-streaming", "upload", bucketName, file1, "--node-address", nodeAddress})
 	assert.NoError(t, err)
-	rootCID, err := extractRootCID(stderr)
+	_, _, err = captureCobraOutput(rootCmd, []string{"files-streaming", "upload", bucketName, file1, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	testCases := []testCase{
+		// Streaming API
 		{
-			name:           "File info successfully",
-			args:           []string{"file", "info", bucketName, filepath.Base(file), "--node-address", nodeAddress},
-			expectedOutput: []string{fmt.Sprintf("File: Name=%s, RootCID=%s", filepath.Base(file), rootCID)},
+			name:           "List file versions successfully",
+			args:           []string{"files-streaming", "versions", bucketName, filepath.Base(file1), "--node-address", nodeAddress},
+			expectedOutput: []string{"Version: RootCID="},
 			expectError:    false,
 		},
 		{
-			name:           "File info for non-existent file",
-			args:           []string{"file", "info", bucketName, "nonexistent-file", "--node-address", nodeAddress},
-			expectedOutput: []string{"failed to get file info: sdk: rpc error: code = NotFound"},
-			expectError:    true,
-		},
-		{
-			name:           "Bucket name not provided",
-			args:           []string{"file", "info", "", filepath.Base(file), "--node-address", nodeAddress},
-			expectedOutput: []string{"bucket name is required"},
-			expectError:    true,
-		},
-		{
-			name:           "File name not provided",
-			args:           []string{"file", "info", bucketName, "", "--node-address", nodeAddress},
-			expectedOutput: []string{"file name is required"},
+			name:           "List file versions for non-existent file",
+			args:           []string{"files-streaming", "versions", bucketName, "foobar", "--node-address", nodeAddress},
+			expectedOutput: []string{"failed to get file versions: sdk: rpc error: code = NotFound"},
 			expectError:    true,
 		},
 	}
@@ -649,7 +573,12 @@ func TestFileInfoCommand(t *testing.T) {
 			}
 
 			for _, expected := range tc.expectedOutput {
-				assert.Contains(t, stdout+stderr, expected)
+				result := stdout + stderr
+				if !tc.expectError {
+					lines := strings.Split(strings.TrimSpace(result), "\n")
+					assert.Len(t, lines, 2)
+				}
+				assert.Contains(t, result, expected)
 			}
 		})
 	}
@@ -659,9 +588,8 @@ func TestIPCFileInfoCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
 	privateKey := PickPrivateKey(t)
 
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"ipc", "bucket", "create", "--private-key", privateKey, bucketName, "--node-address", nodeAddress})
+	bucketName := testrand.String(10)
+	_, _, err := captureCobraOutput(rootCmd, []string{"ipc", "bucket", "create", "--private-key", privateKey, bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	file, err := createTempFile(t, 2*memory.MB.ToInt64())
@@ -723,9 +651,8 @@ func TestIPCFileInfoCommand(t *testing.T) {
 
 func TestStreamingFileInfoCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
+	bucketName := testrand.String(10)
+	_, _, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	file, err := createTempFile(t, 2*memory.MB.ToInt64())
@@ -780,61 +707,12 @@ func TestStreamingFileInfoCommand(t *testing.T) {
 	}
 }
 
-func TestFileUploadCommand(t *testing.T) {
-	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-
-	file, err := createTempFile(t, 2*memory.MB.ToInt64())
-	assert.NoError(t, err)
-
-	testCases := []testCase{
-		{
-			name:           "File upload successfully",
-			args:           []string{"file", "upload", bucketName, file, "--node-address", nodeAddress},
-			expectedOutput: []string{fmt.Sprintf("File uploaded successfully: Name=%s", filepath.Base(file))},
-			expectError:    false,
-		},
-		{
-			name:           "Bucket name not provided",
-			args:           []string{"file", "upload", "", file, "--node-address", nodeAddress},
-			expectedOutput: []string{"bucket name is required"},
-			expectError:    true,
-		},
-		{
-			name:           "File path not provided",
-			args:           []string{"file", "upload", bucketName, "", "--node-address", nodeAddress},
-			expectedOutput: []string{"file path is required"},
-			expectError:    true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			stdout, stderr, err := captureCobraOutput(rootCmd, tc.args)
-
-			if tc.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-
-			for _, expected := range tc.expectedOutput {
-				assert.Contains(t, stdout+stderr, expected)
-			}
-		})
-	}
-}
-
 func TestIPCFileUploadCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
 	privateKey := PickPrivateKey(t)
 
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"ipc", "bucket", "create", "--private-key", privateKey, bucketName, "--node-address", nodeAddress})
+	bucketName := testrand.String(10)
+	_, _, err := captureCobraOutput(rootCmd, []string{"ipc", "bucket", "create", "--private-key", privateKey, bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	file, err := createTempFile(t, 2*memory.MB.ToInt64())
@@ -880,9 +758,8 @@ func TestIPCFileUploadCommand(t *testing.T) {
 
 func TestStreamingFileUploadCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
+	bucketName := testrand.String(10)
+	_, _, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	file, err := createTempFile(t, 2*memory.MB.ToInt64())
@@ -931,226 +808,12 @@ func TestStreamingFileUploadCommand(t *testing.T) {
 	}
 }
 
-func TestFileDownloadCommand(t *testing.T) {
-	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-
-	file, err := createTempFile(t, 2*memory.MB.ToInt64())
-	assert.NoError(t, err)
-
-	_, _, err = captureCobraOutput(rootCmd, []string{"file", "upload", bucketName, file, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-
-	tempDir := t.TempDir()
-
-	testCases := []testCase{
-		{
-			name:           "File download successfully",
-			args:           []string{"file", "download", bucketName, filepath.Base(file), tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{fmt.Sprintf("File downloaded successfully: Name=%s", filepath.Base(file))},
-			expectError:    false,
-		},
-		{
-			name:           "Bucket name not provided",
-			args:           []string{"file", "download", "", filepath.Base(file), tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{"bucket name is required"},
-			expectError:    true,
-		},
-		{
-			name:           "File name not provided",
-			args:           []string{"file", "download", bucketName, "", tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{"file name is required"},
-			expectError:    true,
-		},
-		{
-			name:           "Destination path not provided",
-			args:           []string{"file", "download", bucketName, filepath.Base(file), "", "--node-address", nodeAddress},
-			expectedOutput: []string{"destination path is required"},
-			expectError:    true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			stdout, stderr, err := captureCobraOutput(rootCmd, tc.args)
-
-			if tc.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-
-			for _, expected := range tc.expectedOutput {
-				assert.Contains(t, stdout+stderr, expected)
-			}
-		})
-	}
-}
-
-func TestRangeFileDownloadCommand(t *testing.T) {
-	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-
-	file, err := createTempFile(t, 10*memory.MB.ToInt64())
-	assert.NoError(t, err)
-
-	_, _, err = captureCobraOutput(rootCmd, []string{"file", "upload", bucketName, file, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-
-	tempDir := t.TempDir()
-
-	testCases := []testCase{
-		{
-			name:           "File download successfully",
-			args:           []string{"file", "download-range", bucketName, filepath.Base(file), "0-3", tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{fmt.Sprintf("File part downloaded successfully: Name=%s, Blocks=0-3", filepath.Base(file))},
-			expectError:    false,
-		},
-		{
-			name:           "Bucket name not provided",
-			args:           []string{"file", "download-range", "", filepath.Base(file), "0-3", tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{"bucket name is required"},
-			expectError:    true,
-		},
-		{
-			name:           "File name not provided",
-			args:           []string{"file", "download-range", bucketName, "", "0-3", tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{"file name is required"},
-			expectError:    true,
-		},
-		{
-			name:           "Range not provided",
-			args:           []string{"file", "download-range", bucketName, filepath.Base(file), "", tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{"range should be in the format start-end"},
-			expectError:    true,
-		},
-		{
-			name:           "Destination path not provided",
-			args:           []string{"file", "download-range", bucketName, filepath.Base(file), "0-3", "", "--node-address", nodeAddress},
-			expectedOutput: []string{"destination path is required"},
-			expectError:    true,
-		},
-		{
-			name:           "Not nmbers in ranges",
-			args:           []string{"file", "download-range", bucketName, filepath.Base(file), "42-bar", tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{"failed to parse ranges in 42-bar"},
-			expectError:    true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			stdout, stderr, err := captureCobraOutput(rootCmd, tc.args)
-
-			if tc.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-
-			for _, expected := range tc.expectedOutput {
-				assert.Contains(t, stdout+stderr, expected)
-			}
-		})
-	}
-}
-
-func TestCmdFileDownloadV2(t *testing.T) {
-	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-
-	file, err := createTempFile(t, 2*memory.MB.ToInt64())
-	assert.NoError(t, err)
-
-	_, _, err = captureCobraOutput(rootCmd, []string{"file", "upload", bucketName, file, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-
-	tempDir := t.TempDir()
-
-	testCases := []struct {
-		name           string
-		args           []string
-		expectedOutput []string
-		expectError    bool
-	}{
-		{
-			name: "File download V2 successfully",
-			args: []string{"file", "download2", bucketName, filepath.Base(file), tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{
-				fmt.Sprintf("File downloaded successfully: Name=%s, Path=%s", filepath.Base(file), filepath.Join(tempDir, filepath.Base(file))),
-			},
-			expectError: false,
-		},
-		{
-			name:           "Bucket name not provided",
-			args:           []string{"file", "download2", "", filepath.Base(file), tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{"Error: bucket name is required"},
-			expectError:    true,
-		},
-		{
-			name:           "File name not provided",
-			args:           []string{"file", "download2", bucketName, "", tempDir, "--node-address", nodeAddress},
-			expectedOutput: []string{"Error: file name is required"},
-			expectError:    true,
-		},
-		{
-			name:           "Destination path not provided",
-			args:           []string{"file", "download2", bucketName, filepath.Base(file), "", "--node-address", nodeAddress},
-			expectedOutput: []string{"Error: destination path is required"},
-			expectError:    true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			stdout, stderr, err := captureCobraOutput(rootCmd, tc.args)
-
-			if tc.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-
-			output := stdout + stderr
-
-			for _, expected := range tc.expectedOutput {
-				assert.Contains(t, output, expected)
-			}
-
-			if !tc.expectError && tc.name == "File download V2 successfully" {
-				downloadedFilePath := filepath.Join(tempDir, filepath.Base(file))
-				_, err := os.Stat(downloadedFilePath)
-				assert.NoError(t, err)
-
-				originalContent, err := os.ReadFile(file)
-				assert.NoError(t, err)
-
-				downloadedContent, err := os.ReadFile(downloadedFilePath)
-				assert.NoError(t, err)
-
-				assert.Equal(t, originalContent, downloadedContent)
-			}
-		})
-	}
-}
-
 func TestIPCFileDownloadCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
 	privateKey := PickPrivateKey(t)
 
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"ipc", "bucket", "create", "--private-key", privateKey, bucketName, "--node-address", nodeAddress})
+	bucketName := testrand.String(10)
+	_, _, err := captureCobraOutput(rootCmd, []string{"ipc", "bucket", "create", "--private-key", privateKey, bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	file, err := createTempFile(t, 2*memory.MB.ToInt64())
@@ -1218,9 +881,8 @@ func TestIPCFileDownloadCommand(t *testing.T) {
 
 func TestStreamingFileDownloadCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
+	bucketName := testrand.String(10)
+	_, _, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	file, err := createTempFile(t, 2*memory.MB.ToInt64())
@@ -1285,9 +947,8 @@ func TestStreamingFileDownloadCommand(t *testing.T) {
 
 func TestStreamingFileDeleteCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
-	bucketName, err := randString(10)
-	assert.NoError(t, err)
-	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
+	bucketName := testrand.String(10)
+	_, _, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	file, err := createTempFile(t, 2*memory.MB.ToInt64())
@@ -1382,29 +1043,13 @@ func TestCmdCarCreate(t *testing.T) {
 	}
 }
 
-func randString(i int) (string, error) {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, i)
-	_, err := rand.Read(b)
-	if err != nil {
-		return "", err
-	}
-	for i := range b {
-		b[i] = charset[b[i]%byte(len(charset))]
-	}
-	return string(b), nil
-}
-
 func createTempFile(t *testing.T, size int64) (string, error) {
 	t.Helper()
 	tempFile, err := os.CreateTemp(t.TempDir(), "test-file")
 	if err != nil {
 		return "", err
 	}
-	txt, err := randString(int(size))
-	if err != nil {
-		return "", err
-	}
+	txt := testrand.String(int(size))
 	_, err = tempFile.WriteString(txt)
 	if err != nil {
 		return "", err

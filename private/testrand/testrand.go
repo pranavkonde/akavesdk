@@ -32,3 +32,15 @@ func BytesD(t testing.TB, seed, size int64) []byte {
 	}
 	return data
 }
+
+// String returns a random string of the given length using math/rand.
+func String(length int) string {
+	dictionary := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+	dictionaryLen := len(dictionary)
+
+	buffer := make([]byte, length)
+	for i := range buffer {
+		buffer[i] = dictionary[rand2.Intn(dictionaryLen)]
+	}
+	return string(buffer)
+}

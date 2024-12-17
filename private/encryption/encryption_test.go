@@ -5,11 +5,14 @@ package encryption_test
 
 import (
 	"encoding/base64"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"akave.ai/akavesdk/private/encryption"
+	"akave.ai/akavesdk/private/memory"
+	"akave.ai/akavesdk/private/testrand"
 )
 
 func TestEncryption(t *testing.T) {
@@ -52,5 +55,19 @@ func TestEncryption(t *testing.T) {
 
 			require.Equal(t, td.data, string(decrypted))
 		})
+	}
+}
+
+func TestDataOverhead(t *testing.T) {
+	dataSizes := []int64{1, 16}
+	key, _ := encryption.DeriveKey([]byte("key"), []byte("some_info"))
+	for i, size := range dataSizes {
+		data := testrand.Bytes(t, size*memory.MB.ToInt64())
+		encrypted, err := encryption.Encrypt(key, data, []byte(fmt.Sprintf("%d", i)))
+		require.NoError(t, err)
+		require.NotEqual(t, data[:10], encrypted[:10])
+		encryptedSize := len(encrypted)
+		dataSize := len(data)
+		t.Logf("Data size: %d, Encrypted size: %d, overhead: %d", dataSize, encryptedSize, encryptedSize-dataSize)
 	}
 }

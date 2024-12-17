@@ -4,8 +4,10 @@
 package ipc
 
 import (
+	"encoding/hex"
 	"errors"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -52,4 +54,21 @@ func ErrorHashToString(err error) string {
 	}
 
 	return err.Error()
+}
+
+// parseErrorsToHashes parses error from smart contract to hashes.
+func parseErrorsToHashes() []string {
+	errorsContract := []string{"BucketAlreadyExists()", "BucketInvalid()", "BucketInvalidOwner()", "BucketNonexists()", "BucketNonempty()",
+		"FileAlreadyExists()", "FileInvalid()", "FileNonexists()", "FileNonempty()", "BlockAlreadyExists()", "BlockInvalid()",
+		"BlockNonexists()", "InvalidArrayLength(uint256 cidsLength, uint256 sizesLength)", "InvalidFileBlocksCount()"}
+
+	errHashes := make([]string, 0)
+
+	for _, errC := range errorsContract {
+		hash := crypto.Keccak256([]byte(errC))
+		errMsg := "0x" + hex.EncodeToString(hash[:4])
+		errHashes = append(errHashes, errMsg)
+	}
+
+	return errHashes
 }

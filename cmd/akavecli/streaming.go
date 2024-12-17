@@ -41,6 +41,28 @@ var (
 		RunE: cmdStreamingListFiles,
 	}
 
+	streamingFileVersionsCmd = &cobra.Command{
+		Use:   "versions",
+		Short: "Lists all versions of a given file",
+		Args: func(cmd *cobra.Command, args []string) error {
+			for i, arg := range args {
+				args[i] = strings.TrimSpace(arg)
+			}
+			if len(args) != 2 {
+				return NewCmdParamsError(fmt.Sprintf("file versions command expects exactly 2 argument [bucket name] [file name]; got %d", len(args)))
+			}
+			if args[0] == "" {
+				return NewCmdParamsError("bucket name is required")
+			}
+			if args[1] == "" {
+				return NewCmdParamsError("file name is required")
+			}
+
+			return nil
+		},
+		RunE: cmdStreamingFileVersions,
+	}
+
 	streamingFileInfoCmd = &cobra.Command{
 		Use:   "info",
 		Short: "Retrieves file information",
@@ -93,7 +115,7 @@ var (
 				args[i] = strings.TrimSpace(arg)
 			}
 			if len(args) != 3 {
-				return NewCmdParamsError(fmt.Sprintf("view bucket command expects exactly 3 arguments [bucket name] [file name] [destination path]; got %d", len(args)))
+				return NewCmdParamsError(fmt.Sprintf("view bucket command expects 3 or 4 arguments [bucket name] [file name] [destination path] [root_cid]; got %d", len(args)))
 			}
 			if args[0] == "" {
 				return NewCmdParamsError("bucket name is required")
@@ -158,7 +180,7 @@ func cmdStreamingListFiles(cmd *cobra.Command, args []string) (err error) {
 		return nil
 	}
 	for _, file := range files {
-		cmd.PrintErrf("File: Name=%s, RootCID=%s, Size=%d, CreatedAt=%s\n", file.Name, file.RootCID, file.Size, file.CreatedAt)
+		cmd.PrintErrf("File: Name=%s, RootCID=%s, Size=%d, CreatedAt=%s\n", file.Name, file.RootCID, file.EncodedSize, file.CreatedAt)
 	}
 
 	return nil
@@ -185,7 +207,7 @@ func cmdStreamingFileInfo(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to get file info: %w", err)
 	}
 
-	cmd.PrintErrf("File: Name=%s, RootCID=%s, Size=%d, CreatedAt=%s\n", file.Name, file.RootCID, file.Size, file.CreatedAt)
+	cmd.PrintErrf("File: Name=%s, RootCID=%s, Size=%d, CreatedAt=%s\n", file.Name, file.RootCID, file.EncodedSize, file.CreatedAt)
 	return nil
 }
 
@@ -244,7 +266,7 @@ func cmdStreamingFileUpload(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to finish progress bar: %w", err)
 	}
 
-	cmd.PrintErrf("File uploaded successfully: Name=%s, RootCID=%s, Size=%d, TransferedSize=%d\n", fileName, info.RootCID, fi.Size(), info.Size)
+	cmd.PrintErrf("File uploaded successfully: Name=%s, RootCID=%s, Size=%d, TransferedSize=%d\n", fileName, info.RootCID, fi.Size(), info.EncodedSize)
 	if err != nil {
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
@@ -258,6 +280,10 @@ func cmdStreamingFileDownload(cmd *cobra.Command, args []string) (err error) {
 	bucketName := args[0]
 	fileName := args[1]
 	destPath := args[2]
+	rootCID := ""
+	if len(args) == 4 {
+		rootCID = args[3]
+	}
 
 	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockPartSize, useConnectionPool)
 	if err != nil {
@@ -271,7 +297,7 @@ func cmdStreamingFileDownload(cmd *cobra.Command, args []string) (err error) {
 
 	streamingAPI := sdk.StreamingAPI()
 
-	fileDownload, err := streamingAPI.CreateFileDownload(ctx, bucketName, fileName)
+	fileDownload, err := streamingAPI.CreateFileDownload(ctx, bucketName, fileName, rootCID)
 	if err != nil {
 		return fmt.Errorf("failed to create file download: %w", err)
 	}
@@ -292,7 +318,7 @@ func cmdStreamingFileDownload(cmd *cobra.Command, args []string) (err error) {
 	}
 	// TODO: doesn't display correct bar with file size from Info as it contains some overhead
 	bar := progressbar.DefaultBytes(
-		info.Size,
+		info.EncodedSize,
 		"downloading",
 	)
 
@@ -307,7 +333,7 @@ func cmdStreamingFileDownload(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to finish progress bar: %w", err)
 	}
 
-	cmd.PrintErrf("File downloaded successfully: Name=%s, Path=%s, Size=%d, TransferedSize=%d\n", fileName, filepath.Join(destPath, fileName), writtenBytes, info.Size)
+	cmd.PrintErrf("File downloaded successfully: Name=%s, Path=%s, Size=%d, TransferedSize=%d\n", fileName, filepath.Join(destPath, fileName), writtenBytes, info.EncodedSize)
 	return nil
 }
 
@@ -333,5 +359,33 @@ func cmdStreamingFileDelete(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	cmd.PrintErrf("File deleted successfully: Name=%s\n", fileName)
+	return nil
+}
+
+func cmdStreamingFileVersions(cmd *cobra.Command, args []string) (err error) {
+	ctx := cmd.Context()
+	defer mon.Task()(&ctx, args)(&err)
+	bucketName := args[0]
+	fileName := args[1]
+
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockPartSize, useConnectionPool)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := sdk.Close(); cerr != nil {
+			cmd.PrintErrf("failed to close SDK: %v", cerr)
+		}
+	}()
+
+	versions, err := sdk.StreamingAPI().FileVersions(ctx, bucketName, fileName)
+	if err != nil {
+		return fmt.Errorf("failed to get file versions: %w", err)
+	}
+
+	for _, version := range versions {
+		cmd.PrintErrf("Version: RootCID=%s, Size=%d, CreatedAt=%s\n", version.RootCID, version.EncodedSize, version.CreatedAt)
+	}
+
 	return nil
 }

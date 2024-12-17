@@ -19,22 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NodeAPI_BucketCreate_FullMethodName            = "/nodeapi.NodeAPI/BucketCreate"
-	NodeAPI_BucketView_FullMethodName              = "/nodeapi.NodeAPI/BucketView"
-	NodeAPI_BucketList_FullMethodName              = "/nodeapi.NodeAPI/BucketList"
-	NodeAPI_BucketDelete_FullMethodName            = "/nodeapi.NodeAPI/BucketDelete"
-	NodeAPI_FileUploadCreate_FullMethodName        = "/nodeapi.NodeAPI/FileUploadCreate"
-	NodeAPI_FileUploadBlock_FullMethodName         = "/nodeapi.NodeAPI/FileUploadBlock"
-	NodeAPI_FileView_FullMethodName                = "/nodeapi.NodeAPI/FileView"
-	NodeAPI_FileDownloadCreate_FullMethodName      = "/nodeapi.NodeAPI/FileDownloadCreate"
-	NodeAPI_FileDownloadCreateV2_FullMethodName    = "/nodeapi.NodeAPI/FileDownloadCreateV2"
-	NodeAPI_FileDownload_FullMethodName            = "/nodeapi.NodeAPI/FileDownload"
-	NodeAPI_FileDownloadRangeCreate_FullMethodName = "/nodeapi.NodeAPI/FileDownloadRangeCreate"
-	NodeAPI_FileDownloadBlock_FullMethodName       = "/nodeapi.NodeAPI/FileDownloadBlock"
-	NodeAPI_FileList_FullMethodName                = "/nodeapi.NodeAPI/FileList"
-	NodeAPI_FileKeys_FullMethodName                = "/nodeapi.NodeAPI/FileKeys"
-	NodeAPI_FileUpdateCreate_FullMethodName        = "/nodeapi.NodeAPI/FileUpdateCreate"
-	NodeAPI_FileDelete_FullMethodName              = "/nodeapi.NodeAPI/FileDelete"
+	NodeAPI_BucketCreate_FullMethodName = "/nodeapi.NodeAPI/BucketCreate"
+	NodeAPI_BucketView_FullMethodName   = "/nodeapi.NodeAPI/BucketView"
+	NodeAPI_BucketList_FullMethodName   = "/nodeapi.NodeAPI/BucketList"
+	NodeAPI_BucketDelete_FullMethodName = "/nodeapi.NodeAPI/BucketDelete"
 )
 
 // NodeAPIClient is the client API for NodeAPI service.
@@ -46,19 +34,6 @@ type NodeAPIClient interface {
 	BucketView(ctx context.Context, in *BucketViewRequest, opts ...grpc.CallOption) (*BucketViewResponse, error)
 	BucketList(ctx context.Context, in *BucketListRequest, opts ...grpc.CallOption) (*BucketListResponse, error)
 	BucketDelete(ctx context.Context, in *BucketDeleteRequest, opts ...grpc.CallOption) (*BucketDeleteResponse, error)
-	// File APIs.
-	FileUploadCreate(ctx context.Context, in *FileUploadCreateRequest, opts ...grpc.CallOption) (*FileUploadCreateResponse, error)
-	FileUploadBlock(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[FileBlockData, FileUploadBlockResponse], error)
-	FileView(ctx context.Context, in *FileViewRequest, opts ...grpc.CallOption) (*FileViewResponse, error)
-	FileDownloadCreate(ctx context.Context, in *FileDownloadCreateRequest, opts ...grpc.CallOption) (*FileDownloadCreateResponse, error)
-	FileDownloadCreateV2(ctx context.Context, in *FileDownloadCreateRequestV2, opts ...grpc.CallOption) (*FileDownloadCreateResponseV2, error)
-	FileDownload(ctx context.Context, in *FileDownloadRequest, opts ...grpc.CallOption) (*FileDownloadResponse, error)
-	FileDownloadRangeCreate(ctx context.Context, in *FileDownloadRangeCreateRequest, opts ...grpc.CallOption) (*FileDownloadCreateResponse, error)
-	FileDownloadBlock(ctx context.Context, in *FileDownloadBlockRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileBlockData], error)
-	FileList(ctx context.Context, in *FileListRequest, opts ...grpc.CallOption) (*FileListResponse, error)
-	FileKeys(ctx context.Context, in *FileKeysRequest, opts ...grpc.CallOption) (*FileKeysResponse, error)
-	FileUpdateCreate(ctx context.Context, in *FileUpdateCreateRequest, opts ...grpc.CallOption) (*FileUpdateCreateResponse, error)
-	FileDelete(ctx context.Context, in *FileDeleteRequest, opts ...grpc.CallOption) (*FileDeleteResponse, error)
 }
 
 type nodeAPIClient struct {
@@ -109,138 +84,6 @@ func (c *nodeAPIClient) BucketDelete(ctx context.Context, in *BucketDeleteReques
 	return out, nil
 }
 
-func (c *nodeAPIClient) FileUploadCreate(ctx context.Context, in *FileUploadCreateRequest, opts ...grpc.CallOption) (*FileUploadCreateResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FileUploadCreateResponse)
-	err := c.cc.Invoke(ctx, NodeAPI_FileUploadCreate_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAPIClient) FileUploadBlock(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[FileBlockData, FileUploadBlockResponse], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &NodeAPI_ServiceDesc.Streams[0], NodeAPI_FileUploadBlock_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[FileBlockData, FileUploadBlockResponse]{ClientStream: stream}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type NodeAPI_FileUploadBlockClient = grpc.ClientStreamingClient[FileBlockData, FileUploadBlockResponse]
-
-func (c *nodeAPIClient) FileView(ctx context.Context, in *FileViewRequest, opts ...grpc.CallOption) (*FileViewResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FileViewResponse)
-	err := c.cc.Invoke(ctx, NodeAPI_FileView_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAPIClient) FileDownloadCreate(ctx context.Context, in *FileDownloadCreateRequest, opts ...grpc.CallOption) (*FileDownloadCreateResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FileDownloadCreateResponse)
-	err := c.cc.Invoke(ctx, NodeAPI_FileDownloadCreate_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAPIClient) FileDownloadCreateV2(ctx context.Context, in *FileDownloadCreateRequestV2, opts ...grpc.CallOption) (*FileDownloadCreateResponseV2, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FileDownloadCreateResponseV2)
-	err := c.cc.Invoke(ctx, NodeAPI_FileDownloadCreateV2_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAPIClient) FileDownload(ctx context.Context, in *FileDownloadRequest, opts ...grpc.CallOption) (*FileDownloadResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FileDownloadResponse)
-	err := c.cc.Invoke(ctx, NodeAPI_FileDownload_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAPIClient) FileDownloadRangeCreate(ctx context.Context, in *FileDownloadRangeCreateRequest, opts ...grpc.CallOption) (*FileDownloadCreateResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FileDownloadCreateResponse)
-	err := c.cc.Invoke(ctx, NodeAPI_FileDownloadRangeCreate_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAPIClient) FileDownloadBlock(ctx context.Context, in *FileDownloadBlockRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileBlockData], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &NodeAPI_ServiceDesc.Streams[1], NodeAPI_FileDownloadBlock_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[FileDownloadBlockRequest, FileBlockData]{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type NodeAPI_FileDownloadBlockClient = grpc.ServerStreamingClient[FileBlockData]
-
-func (c *nodeAPIClient) FileList(ctx context.Context, in *FileListRequest, opts ...grpc.CallOption) (*FileListResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FileListResponse)
-	err := c.cc.Invoke(ctx, NodeAPI_FileList_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAPIClient) FileKeys(ctx context.Context, in *FileKeysRequest, opts ...grpc.CallOption) (*FileKeysResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FileKeysResponse)
-	err := c.cc.Invoke(ctx, NodeAPI_FileKeys_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAPIClient) FileUpdateCreate(ctx context.Context, in *FileUpdateCreateRequest, opts ...grpc.CallOption) (*FileUpdateCreateResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FileUpdateCreateResponse)
-	err := c.cc.Invoke(ctx, NodeAPI_FileUpdateCreate_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAPIClient) FileDelete(ctx context.Context, in *FileDeleteRequest, opts ...grpc.CallOption) (*FileDeleteResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FileDeleteResponse)
-	err := c.cc.Invoke(ctx, NodeAPI_FileDelete_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // NodeAPIServer is the server API for NodeAPI service.
 // All implementations must embed UnimplementedNodeAPIServer
 // for forward compatibility.
@@ -250,19 +93,6 @@ type NodeAPIServer interface {
 	BucketView(context.Context, *BucketViewRequest) (*BucketViewResponse, error)
 	BucketList(context.Context, *BucketListRequest) (*BucketListResponse, error)
 	BucketDelete(context.Context, *BucketDeleteRequest) (*BucketDeleteResponse, error)
-	// File APIs.
-	FileUploadCreate(context.Context, *FileUploadCreateRequest) (*FileUploadCreateResponse, error)
-	FileUploadBlock(grpc.ClientStreamingServer[FileBlockData, FileUploadBlockResponse]) error
-	FileView(context.Context, *FileViewRequest) (*FileViewResponse, error)
-	FileDownloadCreate(context.Context, *FileDownloadCreateRequest) (*FileDownloadCreateResponse, error)
-	FileDownloadCreateV2(context.Context, *FileDownloadCreateRequestV2) (*FileDownloadCreateResponseV2, error)
-	FileDownload(context.Context, *FileDownloadRequest) (*FileDownloadResponse, error)
-	FileDownloadRangeCreate(context.Context, *FileDownloadRangeCreateRequest) (*FileDownloadCreateResponse, error)
-	FileDownloadBlock(*FileDownloadBlockRequest, grpc.ServerStreamingServer[FileBlockData]) error
-	FileList(context.Context, *FileListRequest) (*FileListResponse, error)
-	FileKeys(context.Context, *FileKeysRequest) (*FileKeysResponse, error)
-	FileUpdateCreate(context.Context, *FileUpdateCreateRequest) (*FileUpdateCreateResponse, error)
-	FileDelete(context.Context, *FileDeleteRequest) (*FileDeleteResponse, error)
 	mustEmbedUnimplementedNodeAPIServer()
 }
 
@@ -284,42 +114,6 @@ func (UnimplementedNodeAPIServer) BucketList(context.Context, *BucketListRequest
 }
 func (UnimplementedNodeAPIServer) BucketDelete(context.Context, *BucketDeleteRequest) (*BucketDeleteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BucketDelete not implemented")
-}
-func (UnimplementedNodeAPIServer) FileUploadCreate(context.Context, *FileUploadCreateRequest) (*FileUploadCreateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FileUploadCreate not implemented")
-}
-func (UnimplementedNodeAPIServer) FileUploadBlock(grpc.ClientStreamingServer[FileBlockData, FileUploadBlockResponse]) error {
-	return status.Errorf(codes.Unimplemented, "method FileUploadBlock not implemented")
-}
-func (UnimplementedNodeAPIServer) FileView(context.Context, *FileViewRequest) (*FileViewResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FileView not implemented")
-}
-func (UnimplementedNodeAPIServer) FileDownloadCreate(context.Context, *FileDownloadCreateRequest) (*FileDownloadCreateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FileDownloadCreate not implemented")
-}
-func (UnimplementedNodeAPIServer) FileDownloadCreateV2(context.Context, *FileDownloadCreateRequestV2) (*FileDownloadCreateResponseV2, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FileDownloadCreateV2 not implemented")
-}
-func (UnimplementedNodeAPIServer) FileDownload(context.Context, *FileDownloadRequest) (*FileDownloadResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FileDownload not implemented")
-}
-func (UnimplementedNodeAPIServer) FileDownloadRangeCreate(context.Context, *FileDownloadRangeCreateRequest) (*FileDownloadCreateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FileDownloadRangeCreate not implemented")
-}
-func (UnimplementedNodeAPIServer) FileDownloadBlock(*FileDownloadBlockRequest, grpc.ServerStreamingServer[FileBlockData]) error {
-	return status.Errorf(codes.Unimplemented, "method FileDownloadBlock not implemented")
-}
-func (UnimplementedNodeAPIServer) FileList(context.Context, *FileListRequest) (*FileListResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FileList not implemented")
-}
-func (UnimplementedNodeAPIServer) FileKeys(context.Context, *FileKeysRequest) (*FileKeysResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FileKeys not implemented")
-}
-func (UnimplementedNodeAPIServer) FileUpdateCreate(context.Context, *FileUpdateCreateRequest) (*FileUpdateCreateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FileUpdateCreate not implemented")
-}
-func (UnimplementedNodeAPIServer) FileDelete(context.Context, *FileDeleteRequest) (*FileDeleteResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FileDelete not implemented")
 }
 func (UnimplementedNodeAPIServer) mustEmbedUnimplementedNodeAPIServer() {}
 func (UnimplementedNodeAPIServer) testEmbeddedByValue()                 {}
@@ -414,204 +208,6 @@ func _NodeAPI_BucketDelete_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodeAPI_FileUploadCreate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileUploadCreateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAPIServer).FileUploadCreate(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAPI_FileUploadCreate_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAPIServer).FileUploadCreate(ctx, req.(*FileUploadCreateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAPI_FileUploadBlock_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(NodeAPIServer).FileUploadBlock(&grpc.GenericServerStream[FileBlockData, FileUploadBlockResponse]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type NodeAPI_FileUploadBlockServer = grpc.ClientStreamingServer[FileBlockData, FileUploadBlockResponse]
-
-func _NodeAPI_FileView_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileViewRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAPIServer).FileView(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAPI_FileView_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAPIServer).FileView(ctx, req.(*FileViewRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAPI_FileDownloadCreate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileDownloadCreateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAPIServer).FileDownloadCreate(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAPI_FileDownloadCreate_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAPIServer).FileDownloadCreate(ctx, req.(*FileDownloadCreateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAPI_FileDownloadCreateV2_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileDownloadCreateRequestV2)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAPIServer).FileDownloadCreateV2(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAPI_FileDownloadCreateV2_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAPIServer).FileDownloadCreateV2(ctx, req.(*FileDownloadCreateRequestV2))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAPI_FileDownload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileDownloadRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAPIServer).FileDownload(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAPI_FileDownload_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAPIServer).FileDownload(ctx, req.(*FileDownloadRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAPI_FileDownloadRangeCreate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileDownloadRangeCreateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAPIServer).FileDownloadRangeCreate(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAPI_FileDownloadRangeCreate_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAPIServer).FileDownloadRangeCreate(ctx, req.(*FileDownloadRangeCreateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAPI_FileDownloadBlock_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(FileDownloadBlockRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(NodeAPIServer).FileDownloadBlock(m, &grpc.GenericServerStream[FileDownloadBlockRequest, FileBlockData]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type NodeAPI_FileDownloadBlockServer = grpc.ServerStreamingServer[FileBlockData]
-
-func _NodeAPI_FileList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileListRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAPIServer).FileList(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAPI_FileList_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAPIServer).FileList(ctx, req.(*FileListRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAPI_FileKeys_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileKeysRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAPIServer).FileKeys(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAPI_FileKeys_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAPIServer).FileKeys(ctx, req.(*FileKeysRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAPI_FileUpdateCreate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileUpdateCreateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAPIServer).FileUpdateCreate(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAPI_FileUpdateCreate_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAPIServer).FileUpdateCreate(ctx, req.(*FileUpdateCreateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAPI_FileDelete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileDeleteRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAPIServer).FileDelete(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAPI_FileDelete_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAPIServer).FileDelete(ctx, req.(*FileDeleteRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // NodeAPI_ServiceDesc is the grpc.ServiceDesc for NodeAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -635,59 +231,8 @@ var NodeAPI_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "BucketDelete",
 			Handler:    _NodeAPI_BucketDelete_Handler,
 		},
-		{
-			MethodName: "FileUploadCreate",
-			Handler:    _NodeAPI_FileUploadCreate_Handler,
-		},
-		{
-			MethodName: "FileView",
-			Handler:    _NodeAPI_FileView_Handler,
-		},
-		{
-			MethodName: "FileDownloadCreate",
-			Handler:    _NodeAPI_FileDownloadCreate_Handler,
-		},
-		{
-			MethodName: "FileDownloadCreateV2",
-			Handler:    _NodeAPI_FileDownloadCreateV2_Handler,
-		},
-		{
-			MethodName: "FileDownload",
-			Handler:    _NodeAPI_FileDownload_Handler,
-		},
-		{
-			MethodName: "FileDownloadRangeCreate",
-			Handler:    _NodeAPI_FileDownloadRangeCreate_Handler,
-		},
-		{
-			MethodName: "FileList",
-			Handler:    _NodeAPI_FileList_Handler,
-		},
-		{
-			MethodName: "FileKeys",
-			Handler:    _NodeAPI_FileKeys_Handler,
-		},
-		{
-			MethodName: "FileUpdateCreate",
-			Handler:    _NodeAPI_FileUpdateCreate_Handler,
-		},
-		{
-			MethodName: "FileDelete",
-			Handler:    _NodeAPI_FileDelete_Handler,
-		},
 	},
-	Streams: []grpc.StreamDesc{
-		{
-			StreamName:    "FileUploadBlock",
-			Handler:       _NodeAPI_FileUploadBlock_Handler,
-			ClientStreams: true,
-		},
-		{
-			StreamName:    "FileDownloadBlock",
-			Handler:       _NodeAPI_FileDownloadBlock_Handler,
-			ServerStreams: true,
-		},
-	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "nodeapi.proto",
 }
 
@@ -702,6 +247,7 @@ const (
 	StreamAPI_FileDownloadBlock_FullMethodName       = "/nodeapi.StreamAPI/FileDownloadBlock"
 	StreamAPI_FileList_FullMethodName                = "/nodeapi.StreamAPI/FileList"
 	StreamAPI_FileView_FullMethodName                = "/nodeapi.StreamAPI/FileView"
+	StreamAPI_FileVersions_FullMethodName            = "/nodeapi.StreamAPI/FileVersions"
 	StreamAPI_FileDelete_FullMethodName              = "/nodeapi.StreamAPI/FileDelete"
 )
 
@@ -721,6 +267,7 @@ type StreamAPIClient interface {
 	FileDownloadBlock(ctx context.Context, in *StreamFileDownloadBlockRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamFileBlockData], error)
 	FileList(ctx context.Context, in *StreamFileListRequest, opts ...grpc.CallOption) (*StreamFileListResponse, error)
 	FileView(ctx context.Context, in *StreamFileViewRequest, opts ...grpc.CallOption) (*StreamFileViewResponse, error)
+	FileVersions(ctx context.Context, in *StreamFileListVersionsRequest, opts ...grpc.CallOption) (*StreamFileListVersionsResponse, error)
 	FileDelete(ctx context.Context, in *StreamFileDeleteRequest, opts ...grpc.CallOption) (*StreamFileDeleteResponse, error)
 }
 
@@ -844,6 +391,16 @@ func (c *streamAPIClient) FileView(ctx context.Context, in *StreamFileViewReques
 	return out, nil
 }
 
+func (c *streamAPIClient) FileVersions(ctx context.Context, in *StreamFileListVersionsRequest, opts ...grpc.CallOption) (*StreamFileListVersionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StreamFileListVersionsResponse)
+	err := c.cc.Invoke(ctx, StreamAPI_FileVersions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *streamAPIClient) FileDelete(ctx context.Context, in *StreamFileDeleteRequest, opts ...grpc.CallOption) (*StreamFileDeleteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StreamFileDeleteResponse)
@@ -870,6 +427,7 @@ type StreamAPIServer interface {
 	FileDownloadBlock(*StreamFileDownloadBlockRequest, grpc.ServerStreamingServer[StreamFileBlockData]) error
 	FileList(context.Context, *StreamFileListRequest) (*StreamFileListResponse, error)
 	FileView(context.Context, *StreamFileViewRequest) (*StreamFileViewResponse, error)
+	FileVersions(context.Context, *StreamFileListVersionsRequest) (*StreamFileListVersionsResponse, error)
 	FileDelete(context.Context, *StreamFileDeleteRequest) (*StreamFileDeleteResponse, error)
 	mustEmbedUnimplementedStreamAPIServer()
 }
@@ -910,6 +468,9 @@ func (UnimplementedStreamAPIServer) FileList(context.Context, *StreamFileListReq
 }
 func (UnimplementedStreamAPIServer) FileView(context.Context, *StreamFileViewRequest) (*StreamFileViewResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FileView not implemented")
+}
+func (UnimplementedStreamAPIServer) FileVersions(context.Context, *StreamFileListVersionsRequest) (*StreamFileListVersionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FileVersions not implemented")
 }
 func (UnimplementedStreamAPIServer) FileDelete(context.Context, *StreamFileDeleteRequest) (*StreamFileDeleteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FileDelete not implemented")
@@ -1097,6 +658,24 @@ func _StreamAPI_FileView_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StreamAPI_FileVersions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StreamFileListVersionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StreamAPIServer).FileVersions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StreamAPI_FileVersions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StreamAPIServer).FileVersions(ctx, req.(*StreamFileListVersionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StreamAPI_FileDelete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StreamFileDeleteRequest)
 	if err := dec(in); err != nil {
@@ -1153,6 +732,10 @@ var StreamAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FileView",
 			Handler:    _StreamAPI_FileView_Handler,
+		},
+		{
+			MethodName: "FileVersions",
+			Handler:    _StreamAPI_FileVersions_Handler,
 		},
 		{
 			MethodName: "FileDelete",
