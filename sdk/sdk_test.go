@@ -69,7 +69,7 @@ func TestCreateBucket(t *testing.T) {
 	bucket, err := akave.CreateBucket(context.Background(), bucketName)
 	require.NoError(t, err)
 	require.NotEmpty(t, bucket.CreatedAt)
-	require.NotEmpty(t, bucket.ID)
+	require.NotEmpty(t, bucket.Name)
 }
 
 func TestViewBucket(t *testing.T) {
@@ -84,7 +84,6 @@ func TestViewBucket(t *testing.T) {
 	bucket, err := akave.CreateBucket(context.Background(), bucketName)
 	require.NoError(t, err)
 	expected := sdk.Bucket{
-		ID:        bucket.ID,
 		Name:      bucketName,
 		CreatedAt: bucket.CreatedAt,
 	}
@@ -107,7 +106,6 @@ func TestListBuckets(t *testing.T) {
 		bucket, err := akave.CreateBucket(context.Background(), bucketName)
 		require.NoError(t, err)
 		expected = append(expected, sdk.Bucket{
-			ID:        bucket.ID,
 			Name:      bucketName,
 			CreatedAt: bucket.CreatedAt,
 		})
@@ -539,7 +537,7 @@ func testUploadDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []byte) {
 	now := time.Now()
 	fileUpload, err := streaming.CreateFileUpload(ctx, bucketName, "example.txt")
 	require.NoError(t, err)
-	assert.Equal(t, sdk.SHA256String(bucketName), fileUpload.BucketID)
+	assert.Equal(t, bucketName, fileUpload.BucketName)
 	assert.Equal(t, "example.txt", fileUpload.Name)
 	assert.GreaterOrEqual(t, fileUpload.CreatedAt.UnixNano(), now.UnixNano())
 	assert.NotEmpty(t, fileUpload.StreamID)
@@ -552,7 +550,7 @@ func testUploadDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []byte) {
 	t.Logf("Upload duration: %v", time.Since(now))
 	assert.Equal(t, fileUpload.StreamID, fileMeta.StreamID)
 	assert.NotEmpty(t, fileMeta.RootCID)
-	assert.Equal(t, fileUpload.BucketID, fileMeta.BucketID)
+	assert.Equal(t, fileUpload.BucketName, fileMeta.BucketName)
 	assert.Equal(t, fileUpload.Name, fileMeta.Name)
 	assert.Greater(t, fileMeta.EncodedSize, int64(len(data)))
 	assert.True(t, (fileMeta.Size-int64(len(data)))%sdk.EncryptionOverhead == 0)
@@ -564,7 +562,7 @@ func testUploadDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []byte) {
 	require.NoError(t, err)
 	assert.Equal(t, fileUpload.StreamID, fileDownload.StreamID)
 	assert.Equal(t, fileUpload.Name, fileDownload.Name)
-	assert.Equal(t, fileUpload.BucketID, fileDownload.BucketID)
+	assert.Equal(t, fileUpload.BucketName, fileDownload.BucketName)
 	require.True(t, len(fileDownload.Chunks) > 0)
 	size := int64(0)
 	for _, chunk := range fileDownload.Chunks {
@@ -595,7 +593,7 @@ func testUploadRandomDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []b
 	now := time.Now()
 	fileUpload, err := streaming.CreateFileUpload(ctx, bucketName, "example.txt")
 	require.NoError(t, err)
-	assert.Equal(t, sdk.SHA256String(bucketName), fileUpload.BucketID)
+	assert.Equal(t, bucketName, fileUpload.BucketName)
 	assert.Equal(t, "example.txt", fileUpload.Name)
 	assert.GreaterOrEqual(t, fileUpload.CreatedAt.UnixNano(), now.UnixNano())
 	assert.NotEmpty(t, fileUpload.StreamID)
@@ -608,7 +606,7 @@ func testUploadRandomDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []b
 	t.Logf("Upload duration: %v", time.Since(now))
 	assert.Equal(t, fileUpload.StreamID, fileMeta.StreamID)
 	assert.NotEmpty(t, fileMeta.RootCID)
-	assert.Equal(t, fileUpload.BucketID, fileMeta.BucketID)
+	assert.Equal(t, fileUpload.BucketName, fileMeta.BucketName)
 	assert.Equal(t, fileUpload.Name, fileMeta.Name)
 	assert.Greater(t, fileMeta.EncodedSize, int64(len(data)))
 	assert.True(t, (fileMeta.Size-int64(len(data)))%sdk.EncryptionOverhead == 0)
@@ -620,7 +618,7 @@ func testUploadRandomDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []b
 	require.NoError(t, err)
 	assert.Equal(t, fileUpload.StreamID, fileDownload.StreamID)
 	assert.Equal(t, fileUpload.Name, fileDownload.Name)
-	assert.Equal(t, fileUpload.BucketID, fileDownload.BucketID)
+	assert.Equal(t, fileUpload.BucketName, fileDownload.BucketName)
 	require.True(t, len(fileDownload.Chunks) > 0)
 	size := int64(0)
 	for _, chunk := range fileDownload.Chunks {
@@ -701,7 +699,7 @@ func TestStreamListFiles(t *testing.T) {
 		expected = append(expected, sdk.FileMetaV2{
 			StreamID:    fm.StreamID,
 			RootCID:     fm.RootCID,
-			BucketID:    sdk.SHA256String(bucketName),
+			BucketName:  bucketName,
 			Name:        fileName,
 			EncodedSize: fm.EncodedSize,
 			Size:        fm.Size,

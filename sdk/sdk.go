@@ -5,8 +5,6 @@ package sdk
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -199,7 +197,7 @@ func (sdk *SDK) CreateBucket(ctx context.Context, name string) (_ *BucketCreateR
 	}
 
 	return &BucketCreateResult{
-		ID:        res.Id,
+		Name:      res.Name,
 		CreatedAt: res.CreatedAt.AsTime(),
 	}, nil
 }
@@ -220,7 +218,6 @@ func (sdk *SDK) ViewBucket(ctx context.Context, bucketName string) (_ Bucket, er
 	}
 
 	return Bucket{
-		ID:        res.GetId(),
 		Name:      res.GetName(),
 		CreatedAt: res.GetCreatedAt().AsTime(),
 	}, nil
@@ -238,7 +235,6 @@ func (sdk *SDK) ListBuckets(ctx context.Context) (_ []Bucket, err error) {
 	buckets := make([]Bucket, 0, len(res.Buckets))
 	for _, bucket := range res.Buckets {
 		buckets = append(buckets, Bucket{
-			ID:        bucket.GetId(),
 			Name:      bucket.GetName(),
 			CreatedAt: bucket.GetCreatedAt().AsTime(),
 		})
@@ -253,7 +249,7 @@ func (sdk *SDK) DeleteBucket(ctx context.Context, bucketName string) (err error)
 
 	// TODO: add validation?
 
-	_, err = sdk.client.BucketDelete(ctx, &pb.BucketDeleteRequest{BucketName: bucketName})
+	_, err = sdk.client.BucketDelete(ctx, &pb.BucketDeleteRequest{Name: bucketName})
 	if err != nil {
 		return errSDK.Wrap(err)
 	}
@@ -283,13 +279,6 @@ func ExtractBlockData(idStr string, data []byte) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unknown cid type: %v", id.Type())
 	}
-}
-
-// SHA256String returns the SHA256 hash of the string.
-func SHA256String(name string) string {
-	h := sha256.New()
-	h.Write([]byte(name))
-	return hex.EncodeToString(h.Sum(nil))
 }
 
 func encryptionKey(parentKey []byte, infoData ...string) ([]byte, error) {

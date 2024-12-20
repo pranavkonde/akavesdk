@@ -12,13 +12,12 @@ import (
 
 // BucketCreateResult is the result of bucket creation.
 type BucketCreateResult struct {
-	ID        string
+	Name      string
 	CreatedAt time.Time
 }
 
 // Bucket is a bucket.
 type Bucket struct {
-	ID        string
 	Name      string
 	CreatedAt time.Time
 }
@@ -94,10 +93,10 @@ type FileMeta struct {
 
 // FileUploadV2 contains single file meta information.
 type FileUploadV2 struct {
-	BucketID  string
-	Name      string
-	StreamID  string
-	CreatedAt time.Time
+	BucketName string
+	Name       string
+	StreamID   string
+	CreatedAt  time.Time
 }
 
 // FileChunkUploadV2 contains single file chunk meta information.
@@ -113,10 +112,10 @@ type FileChunkUploadV2 struct {
 
 // FileDownloadV2 contains single file meta information.
 type FileDownloadV2 struct {
-	StreamID string
-	BucketID string
-	Name     string
-	Chunks   []Chunk
+	StreamID   string
+	BucketName string
+	Name       string
+	Chunks     []Chunk
 }
 
 // FileChunkDownloadV2 contains single file chunk meta information.
@@ -132,7 +131,7 @@ type FileChunkDownloadV2 struct {
 type FileMetaV2 struct {
 	StreamID    string
 	RootCID     string
-	BucketID    string
+	BucketName  string
 	Name        string
 	EncodedSize int64
 	Size        int64

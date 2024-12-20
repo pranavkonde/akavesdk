@@ -51,12 +51,12 @@ func (sdk *StreamingAPI) FileInfo(ctx context.Context, bucketName string, fileNa
 	}
 
 	return FileMetaV2{
-		StreamID:    res.GetStreamId(),
-		RootCID:     res.GetRootCid(),
-		BucketID:    res.GetBucketId(),
-		Name:        res.GetFileName(),
-		EncodedSize: res.GetEncodedSize(),
-		Size:        res.GetSize(),
+		StreamID:    res.StreamId,
+		RootCID:     res.RootCid,
+		BucketName:  res.BucketName,
+		Name:        res.FileName,
+		EncodedSize: res.EncodedSize,
+		Size:        res.Size,
 		CreatedAt:   res.CreatedAt.AsTime(),
 		CommitedAt:  res.CommittedAt.AsTime(),
 	}, nil
@@ -128,10 +128,10 @@ func (sdk *StreamingAPI) CreateFileUpload(ctx context.Context, bucketName string
 	}
 
 	return FileUploadV2{
-		BucketID:  res.BucketId,
-		Name:      res.FileName,
-		StreamID:  res.StreamId,
-		CreatedAt: res.CreatedAt.AsTime(),
+		BucketName: res.BucketName,
+		Name:       res.FileName,
+		StreamID:   res.StreamId,
+		CreatedAt:  res.CreatedAt.AsTime(),
 	}, nil
 }
 
@@ -140,7 +140,7 @@ func (sdk *StreamingAPI) Upload(ctx context.Context, upload FileUploadV2, reader
 	defer mon.Task()(&ctx, upload)(&err)
 
 	chunkEncOverhead := 0
-	fileEncKey, err := encryptionKey(sdk.encryptionKey, upload.BucketID, upload.Name)
+	fileEncKey, err := encryptionKey(sdk.encryptionKey, upload.BucketName, upload.Name)
 	if err != nil {
 		return FileMetaV2{}, errSDK.Wrap(err)
 	}
@@ -234,10 +234,10 @@ func (sdk *StreamingAPI) CreateFileDownload(ctx context.Context, bucketName, fil
 	}
 
 	return FileDownloadV2{
-		StreamID: res.StreamId,
-		BucketID: res.BucketId,
-		Name:     fileName,
-		Chunks:   chunks,
+		StreamID:   res.StreamId,
+		BucketName: res.BucketName,
+		Name:       fileName,
+		Chunks:     chunks,
 	}, nil
 }
 
@@ -266,10 +266,10 @@ func (sdk *StreamingAPI) CreateRangeFileDownload(ctx context.Context, bucketName
 	}
 
 	return FileDownloadV2{
-		StreamID: res.StreamId,
-		BucketID: res.BucketId,
-		Name:     fileName,
-		Chunks:   chunks,
+		StreamID:   res.StreamId,
+		BucketName: res.BucketName,
+		Name:       fileName,
+		Chunks:     chunks,
 	}, nil
 }
 
@@ -277,7 +277,7 @@ func (sdk *StreamingAPI) CreateRangeFileDownload(ctx context.Context, bucketName
 func (sdk *StreamingAPI) Download(ctx context.Context, fileDownload FileDownloadV2, writer io.Writer) (err error) {
 	defer mon.Task()(&ctx, fileDownload)(&err)
 
-	fileEncKey, err := encryptionKey(sdk.encryptionKey, fileDownload.BucketID, fileDownload.Name)
+	fileEncKey, err := encryptionKey(sdk.encryptionKey, fileDownload.BucketName, fileDownload.Name)
 	if err != nil {
 		return errSDK.Wrap(err)
 	}
@@ -310,7 +310,7 @@ func (sdk *StreamingAPI) DownloadRandom(ctx context.Context, fileDownload FileDo
 		return errSDK.Errorf("erasure coding is not enabled")
 	}
 
-	fileEncKey, err := encryptionKey(sdk.encryptionKey, fileDownload.BucketID, fileDownload.Name)
+	fileEncKey, err := encryptionKey(sdk.encryptionKey, fileDownload.BucketName, fileDownload.Name)
 	if err != nil {
 		return errSDK.Wrap(err)
 	}
@@ -772,7 +772,7 @@ func (sdk *StreamingAPI) commitStream(ctx context.Context, upload FileUploadV2, 
 	return FileMetaV2{
 		StreamID:    res.StreamId,
 		RootCID:     rootCID,
-		BucketID:    res.BucketId,
+		BucketName:  res.BucketName,
 		Name:        res.FileName,
 		EncodedSize: res.EncodedSize,
 		Size:        res.Size,
@@ -837,7 +837,7 @@ func toFileMeta(protoFile *pb.File, bucketName string) FileMetaV2 {
 	return FileMetaV2{
 		StreamID:    protoFile.StreamId,
 		RootCID:     protoFile.RootCid,
-		BucketID:    SHA256String(bucketName),
+		BucketName:  bucketName,
 		Name:        protoFile.Name,
 		EncodedSize: protoFile.EncodedSize,
 		Size:        protoFile.Size,

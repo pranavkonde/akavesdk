@@ -242,16 +242,14 @@ func TestIPCDeleteBucketCommand(t *testing.T) {
 func TestViewBucketCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
 	bucketName := testrand.String(10)
-	_, stderr, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-	bucketID, err := extractBucketID(stderr)
+	_, _, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	testCases := []testCase{
 		{
 			name:           "View bucket successfully",
 			args:           []string{"bucket", "view", bucketName, "--node-address", nodeAddress},
-			expectedOutput: []string{fmt.Sprintf("Bucket: ID=%s, Name=%s", bucketID, bucketName)},
+			expectedOutput: []string{fmt.Sprintf("Bucket: Name=%s", bucketName)},
 			expectError:    false,
 		},
 		{
@@ -290,16 +288,14 @@ func TestIPCViewBucketCommand(t *testing.T) {
 	privateKey := PickPrivateKey(t)
 
 	bucketName := testrand.String(10)
-	_, stderr, err := captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName})
-	assert.NoError(t, err)
-	bucketID, err := extractBucketID(stderr)
+	_, _, err := captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName})
 	assert.NoError(t, err)
 
 	testCases := []testCase{
 		{
 			name:           "View bucket successfully",
 			args:           []string{"ipc", "bucket", "view", "--private-key", privateKey, bucketName, "--node-address", nodeAddress},
-			expectedOutput: []string{fmt.Sprintf("Bucket: ID=%s, Name=%s", bucketID, bucketName)},
+			expectedOutput: []string{fmt.Sprintf("Bucket: Name=%s", bucketName)},
 			expectError:    false,
 		},
 		{
@@ -342,22 +338,18 @@ func TestIPCViewBucketCommand(t *testing.T) {
 func TestListBucketsCommand(t *testing.T) {
 	nodeAddress := PickNodeRPCAddress(t)
 	bucketName1 := testrand.String(10)
-	_, stderr, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName1, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-	bucketID1, err := extractBucketID(stderr)
+	_, _, err := captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName1, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	bucketName2 := testrand.String(10)
 	assert.NoError(t, err)
-	_, stderr, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName2, "--node-address", nodeAddress})
-	assert.NoError(t, err)
-	bucketID2, err := extractBucketID(stderr)
+	_, _, err = captureCobraOutput(rootCmd, []string{"bucket", "create", bucketName2, "--node-address", nodeAddress})
 	assert.NoError(t, err)
 
 	testCase := testCase{
 		name:           "List buckets successfully",
 		args:           []string{"bucket", "list", "--node-address", nodeAddress},
-		expectedOutput: []string{fmt.Sprintf("Bucket: ID=%s, Name=%s", bucketID1, bucketName1), fmt.Sprintf("Bucket: ID=%s, Name=%s", bucketID2, bucketName2)},
+		expectedOutput: []string{fmt.Sprintf("Bucket: Name=%s", bucketName1), fmt.Sprintf("Bucket: Name=%s", bucketName2)},
 		expectError:    false,
 	}
 
@@ -381,22 +373,18 @@ func TestIPCListBucketsCommand(t *testing.T) {
 	privateKey := PickPrivateKey(t)
 
 	bucketName1 := testrand.String(10)
-	_, stderr, err := captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName1})
-	assert.NoError(t, err)
-	bucketID1, err := extractBucketID(stderr)
+	_, _, err := captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName1})
 	assert.NoError(t, err)
 
 	bucketName2 := testrand.String(10)
 	assert.NoError(t, err)
-	_, stderr, err = captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName2})
-	assert.NoError(t, err)
-	bucketID2, err := extractBucketID(stderr)
+	_, _, err = captureCobraOutput(rootCmd, []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName2})
 	assert.NoError(t, err)
 
 	testCase := testCase{
 		name:           "List buckets successfully",
 		args:           []string{"ipc", "bucket", "list", "--node-address", nodeAddress, "--private-key", privateKey},
-		expectedOutput: []string{fmt.Sprintf("Bucket: ID=%s, Name=%s", bucketID1, bucketName1), fmt.Sprintf("Bucket: ID=%s, Name=%s", bucketID2, bucketName2)},
+		expectedOutput: []string{fmt.Sprintf("Bucket: Name=%s", bucketName1), fmt.Sprintf("Bucket: Name=%s", bucketName2)},
 		expectError:    false,
 	}
 
@@ -1084,23 +1072,6 @@ func captureCobraOutput(cmd *cobra.Command, args []string) (string, string, erro
 	stderr := stderrBuf.String()
 
 	return stdout, stderr, err
-}
-
-func extractBucketID(logMessage string) (string, error) {
-	pattern := `Bucket created: ID=([a-zA-Z0-9\-]+), CreatedAt=`
-
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return "", fmt.Errorf("failed to compile regex: %w", err)
-	}
-
-	matches := re.FindStringSubmatch(logMessage)
-	if len(matches) < 2 {
-		return "", fmt.Errorf("no ID found in log message")
-	}
-
-	id := matches[1]
-	return id, nil
 }
 
 var (
