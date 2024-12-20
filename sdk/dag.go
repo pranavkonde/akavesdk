@@ -87,6 +87,7 @@ type ChunkDAG struct {
 }
 
 // BuildDAG builds the ChunkDAG of a file.
+// TODO: after removing normal api remove encKey from this function.
 func BuildDAG(ctx context.Context, reader io.Reader, blockSize int64, encKey []byte) (ChunkDAG, error) {
 	var splitter chunker.Splitter
 	var err error

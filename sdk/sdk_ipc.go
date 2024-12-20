@@ -61,7 +61,7 @@ func (sdk *IPC) CreateBucket(ctx context.Context, name string) (_ *BucketCreateR
 	}
 
 	return &BucketCreateResult{
-		ID:        hex.EncodeToString(bucket.Id[:]),
+		Name:      hex.EncodeToString(bucket.Id[:]),
 		CreatedAt: time.Unix(bucket.CreatedAt.Int64(), 0),
 	}, nil
 }
@@ -75,15 +75,14 @@ func (sdk *IPC) ViewBucket(ctx context.Context, bucketName string) (_ Bucket, er
 	}
 
 	res, err := sdk.client.BucketView(ctx, &pb.IPCBucketViewRequest{
-		BucketName: bucketName,
-		Address:    sdk.ipc.Auth.From.String(),
+		Name:    bucketName,
+		Address: sdk.ipc.Auth.From.String(),
 	})
 	if err != nil {
 		return Bucket{}, errSDK.Wrap(err)
 	}
 
 	return Bucket{
-		ID:        res.GetId(),
 		Name:      res.GetName(),
 		CreatedAt: res.GetCreatedAt().AsTime(),
 	}, nil
@@ -103,7 +102,6 @@ func (sdk *IPC) ListBuckets(ctx context.Context) (_ []Bucket, err error) {
 	buckets := make([]Bucket, 0, len(res.Buckets))
 	for _, bucket := range res.Buckets {
 		buckets = append(buckets, Bucket{
-			ID:        bucket.GetId(),
 			Name:      bucket.GetName(),
 			CreatedAt: bucket.GetCreatedAt().AsTime(),
 		})
@@ -117,13 +115,14 @@ func (sdk *IPC) DeleteBucket(ctx context.Context, name string) (err error) {
 	defer mon.Task()(&ctx)(&err)
 
 	bucket, err := sdk.client.BucketView(ctx, &pb.IPCBucketViewRequest{
-		BucketName: name,
-		Address:    sdk.ipc.Auth.From.String(),
+		Name:    name,
+		Address: sdk.ipc.Auth.From.String(),
 	})
 	if err != nil {
 		return errSDK.Wrap(err)
 	}
 
+	// TODO: temp solution, when contract will remove bucket id from DeleteBucket method, this code should be removed
 	id, err := hex.DecodeString(bucket.Id)
 	if err != nil {
 		return errSDK.Wrap(err)
@@ -134,6 +133,7 @@ func (sdk *IPC) DeleteBucket(ctx context.Context, name string) (err error) {
 
 	tx, err := sdk.ipc.Storage.DeleteBucket(sdk.ipc.Auth, bucketID, name)
 	if err != nil {
+		// TODO: transform contract errors
 		return errSDK.Wrap(err)
 	}
 
@@ -316,8 +316,8 @@ func (sdk *IPC) Upload(ctx context.Context, fileUpload FileUpload) (err error) {
 	}()
 
 	for i, block := range fileUpload.Blocks {
-		i, block := i, block
 		deriveCtx := context.WithoutCancel(ctx)
+
 		g.Go(func() (err error) {
 			defer mon.Task()(&deriveCtx, block.CID)(&err)
 
@@ -347,7 +347,7 @@ func (sdk *IPC) Upload(ctx context.Context, fileUpload FileUpload) (err error) {
 				Data: block.Data,
 				Cid:  block.CID,
 			}, sender.Send)
-			if err != nil {
+			if err != nil && !errors.Is(err, io.EOF) {
 				return err
 			}
 
@@ -450,8 +450,8 @@ func (sdk *IPC) Download(ctx context.Context, fileDownload FileDownload, writer 
 	}
 
 	for i, block := range fileDownload.Blocks {
-		i, block := i, block
 		deriveCtx := context.WithoutCancel(ctx)
+
 		g.Go(func() (err error) {
 			defer mon.Task()(&deriveCtx, block.CID)(&err)
 

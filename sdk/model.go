@@ -12,22 +12,22 @@ import (
 
 // BucketCreateResult is the result of bucket creation.
 type BucketCreateResult struct {
-	ID        string
+	Name      string
 	CreatedAt time.Time
 }
 
 // Bucket is a bucket.
 type Bucket struct {
-	ID        string
 	Name      string
 	CreatedAt time.Time
 }
 
 // Chunk is a piece of metadata of some file.
 type Chunk struct {
-	CID   string
-	Size  int64
-	Index int64
+	CID         string
+	EncodedSize int64
+	Size        int64
+	Index       int64
 }
 
 // FileBlock is a piece of metadata of some file.
@@ -93,10 +93,10 @@ type FileMeta struct {
 
 // FileUploadV2 contains single file meta information.
 type FileUploadV2 struct {
-	BucketID  string
-	Name      string
-	StreamID  string
-	CreatedAt time.Time
+	BucketName string
+	Name       string
+	StreamID   string
+	CreatedAt  time.Time
 }
 
 // FileChunkUploadV2 contains single file chunk meta information.
@@ -104,6 +104,7 @@ type FileChunkUploadV2 struct {
 	StreamID      string
 	Index         int64
 	ChunkCID      cid.Cid
+	ActualSize    int64
 	RawDataSize   uint64
 	ProtoNodeSize uint64
 	Blocks        []FileBlock
@@ -111,27 +112,29 @@ type FileChunkUploadV2 struct {
 
 // FileDownloadV2 contains single file meta information.
 type FileDownloadV2 struct {
-	StreamID string
-	BucketID string
-	Name     string
-	Chunks   []Chunk
+	StreamID   string
+	BucketName string
+	Name       string
+	Chunks     []Chunk
 }
 
 // FileChunkDownloadV2 contains single file chunk meta information.
 type FileChunkDownloadV2 struct {
-	CID    string
-	Index  int64
-	Size   int64
-	Blocks []FileBlock
+	CID         string
+	Index       int64
+	EncodedSize int64
+	Size        int64
+	Blocks      []FileBlock
 }
 
 // FileMetaV2 contains single file meta information.
 type FileMetaV2 struct {
-	StreamID   string
-	RootCID    string
-	BucketID   string
-	Name       string
-	Size       int64
-	CreatedAt  time.Time
-	CommitedAt time.Time
+	StreamID    string
+	RootCID     string
+	BucketName  string
+	Name        string
+	EncodedSize int64
+	Size        int64
+	CreatedAt   time.Time
+	CommitedAt  time.Time
 }

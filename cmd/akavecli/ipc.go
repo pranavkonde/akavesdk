@@ -218,7 +218,7 @@ func cmdCreateBucketIPC(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to create bucket: %w", err)
 	}
 
-	cmd.PrintErrf("Bucket created: ID=%s, CreatedAt=%s\n", result.ID, result.CreatedAt)
+	cmd.PrintErrf("Bucket created: ID=%s, CreatedAt=%s\n", result.Name, result.CreatedAt)
 
 	return nil
 }
@@ -277,7 +277,7 @@ func cmdViewBucketIPC(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to get bucket: %w", err)
 	}
 
-	cmd.PrintErrf("Bucket: ID=%s, Name=%s, CreatedAt=%s\n", result.ID, result.Name, result.CreatedAt)
+	cmd.PrintErrf("Bucket: Name=%s, CreatedAt=%s\n", result.Name, result.CreatedAt)
 
 	return nil
 }
@@ -311,7 +311,7 @@ func cmdListBucketsIPC(cmd *cobra.Command, args []string) (err error) {
 		return nil
 	}
 	for _, bucket := range buckets {
-		cmd.PrintErrf("Bucket: ID=%s, Name=%s, CreatedAt=%s\n", bucket.ID, bucket.Name, bucket.CreatedAt)
+		cmd.PrintErrf("Bucket: Name=%s, CreatedAt=%s\n", bucket.Name, bucket.CreatedAt)
 	}
 
 	return nil

@@ -31,5 +31,5 @@ clean: # for local usage
 
 .PHONY: install_tools
 install_tools: # for local usage
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.56.2
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2
 	@go install github.com/fernandrone/linelint@0.0.6
