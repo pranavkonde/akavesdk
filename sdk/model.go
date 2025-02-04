@@ -30,8 +30,20 @@ type Chunk struct {
 	Index       int64
 }
 
-// FileBlock is a piece of metadata of some file.
-type FileBlock struct {
+// AkaveBlockData is a akavenode block metadata.
+type AkaveBlockData struct {
+	Permit      string
+	NodeAddress string
+	NodeID      string
+}
+
+// FilecoinBlockData is a filecoin block metadata.
+type FilecoinBlockData struct {
+	BaseURL string
+}
+
+// FileBlockUpload is a piece of metadata of some file used for upload.
+type FileBlockUpload struct {
 	CID  string
 	Data []byte
 
@@ -40,39 +52,13 @@ type FileBlock struct {
 	NodeID      string
 }
 
-// FileBlockSP is a piece of metadata of some file.
-type FileBlockSP struct {
+// FileBlockDownload is a piece of metadata of some file used for download.
+type FileBlockDownload struct {
 	CID  string
 	Data []byte
 
-	Permit      string
-	NodeAddress string
-	NodeID      string
-
-	SPBaseURL string
-}
-
-// FileUpload represents a file and some metadata.
-type FileUpload struct {
-	RootCID    string
-	BucketName string
-	FileName   string
-	FileSize   int64
-	Blocks     []FileBlock
-}
-
-// FileDownload represents a file download and some metadata.
-type FileDownload struct {
-	BucketName string
-	FileName   string
-	Blocks     []FileBlock
-}
-
-// FileDownloadSP represents a file download and some metadata.
-type FileDownloadSP struct {
-	BucketName string
-	FileName   string
-	Blocks     []FileBlockSP
+	Filecoin *FilecoinBlockData
+	Akave    *AkaveBlockData
 }
 
 // FileListItem contains bucket file list file meta information.
@@ -83,52 +69,44 @@ type FileListItem struct {
 	CreatedAt time.Time
 }
 
-// FileMeta contains single file meta information.
-type FileMeta struct {
-	RootCID   string
-	Name      string
-	Size      int64
-	CreatedAt time.Time
-}
-
-// FileUploadV2 contains single file meta information.
-type FileUploadV2 struct {
+// FileUpload contains single file meta information.
+type FileUpload struct {
 	BucketName string
 	Name       string
 	StreamID   string
 	CreatedAt  time.Time
 }
 
-// FileChunkUploadV2 contains single file chunk meta information.
-type FileChunkUploadV2 struct {
+// FileChunkUpload contains single file chunk meta information.
+type FileChunkUpload struct {
 	StreamID      string
 	Index         int64
 	ChunkCID      cid.Cid
 	ActualSize    int64
 	RawDataSize   uint64
 	ProtoNodeSize uint64
-	Blocks        []FileBlock
+	Blocks        []FileBlockUpload
 }
 
-// FileDownloadV2 contains single file meta information.
-type FileDownloadV2 struct {
+// FileDownload contains single file meta information.
+type FileDownload struct {
 	StreamID   string
 	BucketName string
 	Name       string
 	Chunks     []Chunk
 }
 
-// FileChunkDownloadV2 contains single file chunk meta information.
-type FileChunkDownloadV2 struct {
+// FileChunkDownload contains single file chunk meta information.
+type FileChunkDownload struct {
 	CID         string
 	Index       int64
 	EncodedSize int64
 	Size        int64
-	Blocks      []FileBlock
+	Blocks      []FileBlockDownload
 }
 
-// FileMetaV2 contains single file meta information.
-type FileMetaV2 struct {
+// FileMeta contains single file meta information.
+type FileMeta struct {
 	StreamID    string
 	RootCID     string
 	BucketName  string
@@ -137,4 +115,64 @@ type FileMetaV2 struct {
 	Size        int64
 	CreatedAt   time.Time
 	CommitedAt  time.Time
+}
+
+// IPCBucketCreateResult is the result of ipc bucket creation.
+type IPCBucketCreateResult struct {
+	Name      string
+	CreatedAt time.Time
+}
+
+// IPCBucket is an IPC bucket.
+type IPCBucket struct {
+	ID        string
+	Name      string
+	CreatedAt time.Time
+}
+
+// IPCFileDownload represents an IPC file download and some metadata.
+type IPCFileDownload struct {
+	BucketName string
+	Name       string
+	Chunks     []Chunk
+}
+
+// IPCFileListItem contains IPC bucket file list file meta information.
+type IPCFileListItem struct {
+	RootCID     string
+	Name        string
+	EncodedSize int64
+	CreatedAt   time.Time
+}
+
+// IPCFileMeta contains single IPC file meta information.
+type IPCFileMeta struct {
+	RootCID     string
+	Name        string
+	BucketName  string
+	EncodedSize int64
+	CreatedAt   time.Time
+}
+
+// IPCFileMetaV2 contains single file meta information.
+type IPCFileMetaV2 struct {
+	RootCID     string
+	BucketName  string
+	Name        string
+	EncodedSize int64
+	Size        int64
+	CreatedAt   time.Time
+	CommittedAt time.Time
+}
+
+// IPCFileChunkUploadV2 contains single file chunk meta information.
+type IPCFileChunkUploadV2 struct {
+	Index         int64
+	ChunkCID      cid.Cid
+	ActualSize    int64
+	RawDataSize   uint64
+	ProtoNodeSize uint64
+	Blocks        []FileBlockUpload
+	BucketID      [32]byte
+	FileName      string
 }

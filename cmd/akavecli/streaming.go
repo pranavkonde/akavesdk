@@ -17,6 +17,8 @@ import (
 )
 
 var (
+	filecoinFlag bool
+
 	fileStreamingCmd = &cobra.Command{
 		Use:   "files-streaming",
 		Short: "Manage files in buckets using streaming API",
@@ -154,6 +156,10 @@ var (
 		RunE: cmdStreamingFileDelete,
 	}
 )
+
+func init() {
+	streamingFileDownloadCmd.Flags().BoolVar(&filecoinFlag, "filecoin", false, "downloads data from filecoin if they are already sealed there")
+}
 
 func cmdStreamingListFiles(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
@@ -322,8 +328,12 @@ func cmdStreamingFileDownload(cmd *cobra.Command, args []string) (err error) {
 		"downloading",
 	)
 
-	err = streamingAPI.Download(ctx, fileDownload, io.MultiWriter(bar, outFile))
-	if err != nil {
+	downloadFunc := streamingAPI.Download
+	if filecoinFlag {
+		downloadFunc = streamingAPI.DownloadV2
+	}
+
+	if err = downloadFunc(ctx, fileDownload, io.MultiWriter(bar, outFile)); err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
 	}
 

@@ -209,6 +209,7 @@ func TestUploadDownloadStreamingSmallFiles(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				data := testrand.BytesD(t, 2024, tc.fileSize)
 				testUploadDownloadStreamingAPI(t, akave, data)
+				testUploadDownloadStreamingAPIV2(t, akave, data)
 			})
 		}
 	})
@@ -224,6 +225,7 @@ func TestUploadDownloadStreamingSmallFiles(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				data := testrand.BytesD(t, 2024, tc.fileSize)
 				testUploadDownloadStreamingAPI(t, akave, data)
+				testUploadDownloadStreamingAPIV2(t, akave, data)
 			})
 		}
 	})
@@ -239,6 +241,7 @@ func TestUploadDownloadStreamingSmallFiles(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				data := testrand.BytesD(t, 2024, tc.fileSize)
 				testUploadDownloadStreamingAPI(t, akave, data)
+				testUploadDownloadStreamingAPIV2(t, akave, data)
 			})
 		}
 	})
@@ -256,6 +259,7 @@ func TestUploadDownloadStreamingSmallFiles(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				data := testrand.BytesD(t, 2024, tc.fileSize)
 				testUploadDownloadStreamingAPI(t, akave, data)
+				testUploadDownloadStreamingAPIV2(t, akave, data)
 			})
 		}
 	})
@@ -366,6 +370,7 @@ func TestUploadDownloadStreaming(t *testing.T) {
 				}
 				data := testrand.BytesD(t, 2024, tc.fileSize*memory.MB.ToInt64())
 				testUploadDownloadStreamingAPI(t, akave, data)
+				testUploadDownloadStreamingAPIV2(t, akave, data)
 			})
 		}
 	})
@@ -474,7 +479,7 @@ func TestUploadDownloadIPC(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// TODO: when BytesD used cause "block not found on any live peer" in CI, and block already exist locally. Find issue and fix.
-			data := testrand.Bytes(t, tc.fileSize*memory.MB.ToInt64())
+			data := testrand.BytesD(t, 1, tc.fileSize*memory.MB.ToInt64())
 			testUploadDownloadIPC(t, ipc, data)
 		})
 	}
@@ -578,6 +583,63 @@ func testUploadDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []byte) {
 	checkFileContents(t, 10, data, downloaded.Bytes())
 }
 
+// checks version V2 of Download method.
+func testUploadDownloadStreamingAPIV2(t *testing.T, akave *sdk.SDK, data []byte) {
+	file := bytes.NewBuffer(data)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bucketName := randomBucketName(t, 10)
+	_, err := akave.CreateBucket(ctx, bucketName)
+	require.NoError(t, err)
+
+	streaming := akave.StreamingAPI()
+
+	now := time.Now()
+	fileUpload, err := streaming.CreateFileUpload(ctx, bucketName, "example.txt")
+	require.NoError(t, err)
+	assert.Equal(t, bucketName, fileUpload.BucketName)
+	assert.Equal(t, "example.txt", fileUpload.Name)
+	assert.GreaterOrEqual(t, fileUpload.CreatedAt.UnixNano(), now.UnixNano())
+	assert.NotEmpty(t, fileUpload.StreamID)
+	_, err = uuid.Parse(fileUpload.StreamID)
+	require.NoError(t, err)
+
+	now = time.Now()
+	fileMeta, err := streaming.Upload(ctx, fileUpload, file)
+	require.NoError(t, err)
+	t.Logf("Upload duration: %v", time.Since(now))
+	assert.Equal(t, fileUpload.StreamID, fileMeta.StreamID)
+	assert.NotEmpty(t, fileMeta.RootCID)
+	assert.Equal(t, fileUpload.BucketName, fileMeta.BucketName)
+	assert.Equal(t, fileUpload.Name, fileMeta.Name)
+	assert.Greater(t, fileMeta.EncodedSize, int64(len(data)))
+	assert.True(t, (fileMeta.Size-int64(len(data)))%sdk.EncryptionOverhead == 0)
+	assert.LessOrEqual(t, fileMeta.CreatedAt.UnixNano(), now.UnixNano())
+	assert.GreaterOrEqual(t, fileMeta.CommitedAt.UnixNano(), fileMeta.CreatedAt.UnixNano())
+
+	var downloaded bytes.Buffer
+	fileDownload, err := streaming.CreateFileDownload(ctx, bucketName, fileUpload.Name, "")
+	require.NoError(t, err)
+	assert.Equal(t, fileUpload.StreamID, fileDownload.StreamID)
+	assert.Equal(t, fileUpload.Name, fileDownload.Name)
+	assert.Equal(t, fileUpload.BucketName, fileDownload.BucketName)
+	require.True(t, len(fileDownload.Chunks) > 0)
+	size := int64(0)
+	for _, chunk := range fileDownload.Chunks {
+		size += chunk.Size
+	}
+	assert.Equal(t, size, fileMeta.Size)
+
+	now = time.Now()
+	err = streaming.DownloadV2(ctx, fileDownload, &downloaded)
+	require.NoError(t, err)
+	t.Logf("Download duration: %v", time.Since(now))
+
+	checkFileContents(t, 10, data, downloaded.Bytes())
+}
+
 func testUploadRandomDownloadStreamingAPI(t *testing.T, akave *sdk.SDK, data []byte) {
 	file := bytes.NewBuffer(data)
 
@@ -638,20 +700,14 @@ func testUploadDownloadIPC(t *testing.T, ipc *sdk.IPC, data []byte) {
 	file := bytes.NewBuffer(data)
 
 	bucketName := randomBucketName(t, 10)
+	fileName := randomBucketName(t, 10)
 	_, err := ipc.CreateBucket(context.Background(), bucketName)
 	require.NoError(t, err)
 
 	now := time.Now()
-	fileUpload, err := ipc.CreateFileUpload(context.Background(), bucketName, "example.txt", int64(len(data)), file)
-	require.NoError(t, err)
+	require.NoError(t, ipc.CreateFileUpload(context.Background(), bucketName, fileName))
 	fileUploadDuration := time.Since(now)
 	t.Logf("Create file upload duration: %v", fileUploadDuration)
-
-	require.Equal(t, bucketName, fileUpload.BucketName)
-	require.Equal(t, "example.txt", fileUpload.FileName)
-	require.Equal(t, int64(len(data)), fileUpload.FileSize)
-	require.Greater(t, len(fileUpload.Blocks), 0)
-	require.NotEmpty(t, fileUpload.RootCID)
 
 	time.Sleep(5 * time.Second)
 
@@ -659,16 +715,17 @@ func testUploadDownloadIPC(t *testing.T, ipc *sdk.IPC, data []byte) {
 	defer cancel()
 
 	now = time.Now()
-	upResult := ipc.Upload(ctx, fileUpload)
-	require.NoError(t, upResult)
+	upResult, err := ipc.Upload(ctx, bucketName, fileName, file)
+	require.NoError(t, err)
+	require.Equal(t, upResult.Name, fileName)
 	t.Logf("Upload duration: %v", time.Since(now))
 
 	time.Sleep(5 * time.Second)
 
 	var downloaded bytes.Buffer
-	fileDownload, err := ipc.CreateFileDownload(context.Background(), fileUpload.BucketName, fileUpload.FileName)
+	fileDownload, err := ipc.CreateFileDownload(context.Background(), upResult.BucketName, upResult.Name)
 	require.NoError(t, err)
-	require.True(t, len(fileDownload.Blocks) > 0)
+	require.True(t, len(fileDownload.Chunks) > 0)
 
 	time.Sleep(5 * time.Second)
 
@@ -692,11 +749,11 @@ func TestStreamListFiles(t *testing.T) {
 	_, err = akave.CreateBucket(ctx, bucketName)
 	require.NoError(t, err)
 
-	expected := make([]sdk.FileMetaV2, 0)
+	expected := make([]sdk.FileMeta, 0)
 	for _, fileName := range []string{"foo", "bar", "baz"} {
 		fm := uploadSimpleFileStream(ctx, t, akave, bucketName, fileName)
 
-		expected = append(expected, sdk.FileMetaV2{
+		expected = append(expected, sdk.FileMeta{
 			StreamID:    fm.StreamID,
 			RootCID:     fm.RootCID,
 			BucketName:  bucketName,
@@ -731,7 +788,7 @@ func TestStreamFileVersions(t *testing.T) {
 
 	list, err := akave.StreamingAPI().FileVersions(ctx, bucketName, "foo.txt")
 	require.NoError(t, err)
-	assert.Equal(t, []sdk.FileMetaV2{fm2, fm1}, list)
+	assert.Equal(t, []sdk.FileMeta{fm2, fm1}, list)
 }
 
 func TestStreamFileInfo(t *testing.T) {
@@ -754,7 +811,7 @@ func TestStreamFileInfo(t *testing.T) {
 	require.Equal(t, filemeta, info)
 }
 
-func uploadSimpleFileStream(ctx context.Context, t *testing.T, akave *sdk.SDK, bucket string, fileName string) sdk.FileMetaV2 {
+func uploadSimpleFileStream(ctx context.Context, t *testing.T, akave *sdk.SDK, bucket string, fileName string) sdk.FileMeta {
 	f := generateAny2MBFile(t)
 
 	streaming := akave.StreamingAPI()

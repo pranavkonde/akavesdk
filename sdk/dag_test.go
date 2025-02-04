@@ -111,7 +111,7 @@ func expectedDAG(t *testing.T) sdk.ChunkDAG {
 	return sdk.ChunkDAG{
 		CID:         rootCid,
 		RawDataSize: uint64(10 * memory.MiB.ToInt64()),
-		Blocks: []sdk.FileBlock{
+		Blocks: []sdk.FileBlockUpload{
 			{CID: "bafybeid3roxuooczpetsejm7xblw26rxohzjjl3xy3cnf6ovzfxxi3sapa"},
 			{CID: "bafybeigfjuysrwis5ynbcmrq2skbqx4htxx4i6dstqaqxgveje4wlw6b3m"},
 			{CID: "bafybeicth7txqbqzbv522rigdlznzf2d4t4fkbeaio4bznholhcjycydpa"},
