@@ -99,7 +99,7 @@ func TestIPCCreateBucketCommand(t *testing.T) {
 		{
 			name:           "Create bucket already exists",
 			args:           []string{"--node-address", nodeAddress, "ipc", "bucket", "create", "--private-key", privateKey, bucketName},
-			expectedOutput: []string{"failed to create bucket: sdk: execution reverted"},
+			expectedOutput: []string{"BucketAlreadyExists"},
 			expectError:    true,
 		},
 		{
@@ -597,7 +597,7 @@ func TestIPCFileInfoCommand(t *testing.T) {
 		{
 			name:           "File info for non-existent file",
 			args:           []string{"ipc", "file", "info", "--private-key", privateKey, bucketName, "nonexistent-file", "--node-address", nodeAddress},
-			expectedOutput: []string{"invalid cid: varints malformed, could not reach the end"},
+			expectedOutput: []string{"file not exists"},
 			expectError:    true,
 		},
 		{
@@ -889,6 +889,16 @@ func TestStreamingFileDownloadCommand(t *testing.T) {
 		{
 			name: "File download successfully",
 			args: []string{"files-streaming", "download", bucketName, filepath.Base(file), tempDir, "--node-address", nodeAddress},
+			expectedOutput: []string{
+				fmt.Sprintf("File downloaded successfully: Name=%s", filepath.Base(file)),
+				fmt.Sprintf("Size=%d", 2*memory.MB.ToInt64()),
+				"TransferedSize=",
+			},
+			expectError: false,
+		},
+		{
+			name: "File download successfully from downloadV2",
+			args: []string{"files-streaming", "download", bucketName, filepath.Base(file), tempDir, "--node-address", nodeAddress, "--filecoin"},
 			expectedOutput: []string{
 				fmt.Sprintf("File downloaded successfully: Name=%s", filepath.Base(file)),
 				fmt.Sprintf("Size=%d", 2*memory.MB.ToInt64()),

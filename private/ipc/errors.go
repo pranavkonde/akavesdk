@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-// ErrorHashToString maps error hashes to human-readable strings.
-func ErrorHashToString(err error) string {
+// ErrorHashToError maps error hashes to human-readable errors.
+func ErrorHashToError(err error) error {
 	var x rpc.DataError
 
 	if errors.As(err, &x) {
@@ -20,47 +20,60 @@ func ErrorHashToString(err error) string {
 		if hashCode, ok := data.(string); ok {
 			switch hashCode {
 			case "0x497ef2c2":
-				return "BucketAlreadyExists"
+				return errors.New("BucketAlreadyExists")
 			case "0x4f4b202a":
-				return "BucketInvalid"
+				return errors.New("BucketInvalid")
 			case "0xdc64d0ad":
-				return "BucketInvalidOwner"
+				return errors.New("BucketInvalidOwner")
 			case "0x938a92b7":
-				return "BucketNonexists"
+				return errors.New("BucketNonexists")
 			case "0x89fddc00":
-				return "BucketNonempty"
+				return errors.New("BucketNonempty")
 			case "0x6891dde0":
-				return "FileAlreadyExists"
+				return errors.New("FileAlreadyExists")
 			case "0x77a3cbd8":
-				return "FileInvalid"
+				return errors.New("FileInvalid")
 			case "0x21584586":
-				return "FileNonexists"
+				return errors.New("FileNonexists")
 			case "0xc4a3b6f1":
-				return "FileNonempty"
+				return errors.New("FileNonempty")
+			case "0xd09ec7af":
+				return errors.New("FileNameDuplicate")
+			case "0xd96b03b1":
+				return errors.New("FileFullyUploaded")
+			case "0x702cf740":
+				return errors.New("FileChunkDuplicate")
 			case "0xc1edd16a":
-				return "BlockAlreadyExists"
+				return errors.New("BlockAlreadyExists")
 			case "0xcb20e88c":
-				return "BlockInvalid"
+				return errors.New("BlockInvalid")
 			case "0x15123121":
-				return "BlockNonexists"
+				return errors.New("BlockNonexists")
 			case "0x856b300d":
-				return "InvalidArrayLength"
+				return errors.New("InvalidArrayLength")
 			case "0x17ec8370":
-				return "InvalidFileBlocksCount"
+				return errors.New("InvalidFileBlocksCount")
+			case "0x5660ebd2":
+				return errors.New("InvalidLastBlockSize")
+			case "0x1b6fdfeb":
+				return errors.New("InvalidEncodedSize")
+			case "0xfe33db92":
+				return errors.New("InvalidFileCID")
 			default:
-				return err.Error()
+				return err
 			}
 		}
 	}
 
-	return err.Error()
+	return err
 }
 
 // parseErrorsToHashes parses error from smart contract to hashes.
 func parseErrorsToHashes() []string {
 	errorsContract := []string{"BucketAlreadyExists()", "BucketInvalid()", "BucketInvalidOwner()", "BucketNonexists()", "BucketNonempty()",
-		"FileAlreadyExists()", "FileInvalid()", "FileNonexists()", "FileNonempty()", "BlockAlreadyExists()", "BlockInvalid()",
-		"BlockNonexists()", "InvalidArrayLength(uint256 cidsLength, uint256 sizesLength)", "InvalidFileBlocksCount()"}
+		"FileAlreadyExists()", "FileInvalid()", "FileNonexists()", "FileNonempty()", "FileNameDuplicate()", "FileFullyUploaded()", "FileChunkDuplicate()",
+		"BlockAlreadyExists()", "BlockInvalid()", "BlockNonexists()", "InvalidArrayLength(uint256 cidsLength, uint256 sizesLength)", "InvalidFileBlocksCount()",
+		"InvalidLastBlockSize()", "InvalidEncodedSize()", "InvalidFileCID()"}
 
 	errHashes := make([]string, 0)
 

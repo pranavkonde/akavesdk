@@ -83,7 +83,7 @@ type ChunkDAG struct {
 	CID           cid.Cid
 	RawDataSize   uint64 // size of data read from disk.
 	ProtoNodeSize uint64 // size of the ProtoNode in the DAG(RawsDataSize + protonode overhead).
-	Blocks        []FileBlock
+	Blocks        []FileBlockUpload
 }
 
 // BuildDAG builds the ChunkDAG of a file.
@@ -122,7 +122,7 @@ func BuildDAG(ctx context.Context, reader io.Reader, blockSize int64, encKey []b
 		return ChunkDAG{}, err
 	}
 
-	var blocks = make([]FileBlock, 0)
+	var blocks = make([]FileBlockUpload, 0)
 	if len(rootNode.Links()) == 0 {
 		// Single block case, the root node itself is the block
 		node, err := dagServ.Get(ctx, rootNode.Cid())
@@ -130,7 +130,7 @@ func BuildDAG(ctx context.Context, reader io.Reader, blockSize int64, encKey []b
 			return ChunkDAG{}, err
 		}
 
-		blocks = append(blocks, FileBlock{
+		blocks = append(blocks, FileBlockUpload{
 			CID:  node.Cid().String(),
 			Data: node.RawData(),
 		})
@@ -141,7 +141,7 @@ func BuildDAG(ctx context.Context, reader io.Reader, blockSize int64, encKey []b
 				return ChunkDAG{}, err
 			}
 
-			blocks = append(blocks, FileBlock{
+			blocks = append(blocks, FileBlockUpload{
 				CID:  l.Cid.String(),
 				Data: node.RawData(),
 			})
@@ -175,11 +175,11 @@ func nodeSizes(node format.Node) (uint64, uint64, error) {
 	return rawDataSize, protoNodeSize, nil
 }
 
-func blockByCID(blocks []FileBlock, cid string) (FileBlock, bool) {
+func blockByCID(blocks []FileBlockUpload, cid string) (FileBlockUpload, bool) {
 	for _, v := range blocks {
 		if v.CID == cid {
 			return v, true
 		}
 	}
-	return FileBlock{}, false
+	return FileBlockUpload{}, false
 }

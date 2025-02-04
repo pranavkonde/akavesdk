@@ -5,10 +5,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 
 	"akave.ai/akavesdk/sdk"
@@ -218,7 +220,7 @@ func cmdCreateBucketIPC(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to create bucket: %w", err)
 	}
 
-	cmd.PrintErrf("Bucket created: ID=%s, CreatedAt=%s\n", result.Name, result.CreatedAt)
+	cmd.PrintErrf("Bucket created: Name=%s, CreatedAt=%s\n", result.Name, result.CreatedAt)
 
 	return nil
 }
@@ -347,7 +349,7 @@ func cmdListFilesIPC(cmd *cobra.Command, args []string) (err error) {
 		return nil
 	}
 	for _, file := range files {
-		cmd.PrintErrf("File: Name=%s, RootCID=%s, Size=%d, CreatedAt=%s\n", file.Name, file.RootCID, file.Size, file.CreatedAt)
+		cmd.PrintErrf("File: Name=%s, RootCID=%s, EncodedSize=%d, CreatedAt=%s\n", file.Name, file.RootCID, file.EncodedSize, file.CreatedAt)
 	}
 
 	return nil
@@ -379,7 +381,7 @@ func cmdFileInfoIPC(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to get file info: %w", err)
 	}
 
-	cmd.PrintErrf("File: Name=%s, RootCID=%s, Size=%d, CreatedAt=%s\n", file.Name, file.RootCID, file.Size, file.CreatedAt)
+	cmd.PrintErrf("File: Name=%s, RootCID=%s, EncodedSize=%d, CreatedAt=%s\n", file.Name, file.RootCID, file.EncodedSize, file.CreatedAt)
 
 	return nil
 }
@@ -401,7 +403,7 @@ func cmdFileUploadIPC(cmd *cobra.Command, args []string) (err error) {
 		}
 	}()
 
-	fileInfo, err := file.Stat()
+	fi, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %w", err)
 	}
@@ -421,16 +423,26 @@ func cmdFileUploadIPC(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 
-	fileUpload, err := ipc.CreateFileUpload(ctx, bucketName, fileName, fileInfo.Size(), file)
-	if err != nil {
+	if err := ipc.CreateFileUpload(ctx, bucketName, fileName); err != nil {
 		return fmt.Errorf("failed to create file upload: %w", err)
 	}
 
-	if err := ipc.Upload(ctx, fileUpload); err != nil {
+	bar := progressbar.DefaultBytes(
+		fi.Size(),
+		"uploading",
+	)
+	r := progressbar.NewReader(file, bar)
+
+	fileMeta, err := ipc.Upload(ctx, bucketName, fileName, &r)
+	if err != nil {
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
+	// Finish progress bar: fill the bar as in this point it's guaranteed that the file has been uploaded
+	if err := bar.Finish(); err != nil {
+		return fmt.Errorf("failed to finish progress bar: %w", err)
+	}
 
-	cmd.PrintErrf("File uploaded successfully: Name=%s, RootCID=%s\n", fileName, fileUpload.RootCID)
+	cmd.PrintErrf("File uploaded successfully: Name=%s, RootCID=%s, EncodedSize=%d\n", fileName, fileMeta.RootCID, fileMeta.EncodedSize)
 
 	return nil
 }
@@ -472,10 +484,25 @@ func cmdFileDownloadIPC(cmd *cobra.Command, args []string) (err error) {
 		}
 	}()
 
-	if err := ipc.Download(ctx, fileDownload, outFile); err != nil {
+	info, err := ipc.FileInfo(ctx, bucketName, fileName)
+	if err != nil {
+		return fmt.Errorf("failed to get file info: %w", err)
+	}
+	bar := progressbar.DefaultBytes(
+		info.EncodedSize,
+		"downloading",
+	)
+
+	if err := ipc.Download(ctx, fileDownload, io.MultiWriter(bar, outFile)); err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
 	}
 
-	cmd.PrintErrf("File downloaded successfully: Name=%s, Path=%s\n", fileName, filepath.Join(destPath, fileName))
+	writtenBytes := bar.State().CurrentNum
+	// Finish progress bar: fill the bar as in this point it's guaranteed that the file has been downloaded
+	if err := bar.Finish(); err != nil {
+		return fmt.Errorf("failed to finish progress bar: %w", err)
+	}
+
+	cmd.PrintErrf("File downloaded successfully: Name=%s, Path=%s, Size=%d\n", fileName, filepath.Join(destPath, fileName), writtenBytes)
 	return nil
 }

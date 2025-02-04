@@ -21,14 +21,17 @@ type SPClient struct {
 
 // New creates a new SPClient.
 func New() *SPClient {
-	return &SPClient{
-		client: http.DefaultClient,
-	}
+	return &SPClient{client: http.DefaultClient}
+}
+
+// Close closes the client.
+func (f *SPClient) Close() {
+	f.client.CloseIdleConnections()
 }
 
 // FetchBlock fetches the block from the filecoin provider.
-func (f *SPClient) FetchBlock(ctx context.Context, nodeBaseURL string, cid cid.Cid) (blocks.Block, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/ipfs/%s?format=raw", nodeBaseURL, cid.String()), nil)
+func (f *SPClient) FetchBlock(ctx context.Context, spBaseURL string, cid cid.Cid) (blocks.Block, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/ipfs/%s?format=raw", spBaseURL, cid.String()), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

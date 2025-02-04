@@ -5,6 +5,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -35,8 +36,12 @@ const (
 	minFileSize         = 127 // 127 bytes
 )
 
-var errSDK = errs.Tag("sdk")
-var mon = monkit.Package()
+var (
+	errSDK                  = errs.Tag("sdk")
+	errMissingBlockMetadata = errors.New("missing block metadata")
+
+	mon = monkit.Package()
+)
 
 // Option is a SDK option.
 type Option func(*SDK)
@@ -136,6 +141,7 @@ func New(address string, maxConcurrency int, blockPartSize int64, useConnectionP
 
 // Close closes the SDK internal connection.
 func (sdk *SDK) Close() error {
+	sdk.spClient.Close()
 	return sdk.conn.Close()
 }
 
@@ -144,6 +150,7 @@ func (sdk *SDK) StreamingAPI() *StreamingAPI {
 	return &StreamingAPI{
 		client:            pb.NewStreamAPIClient(sdk.conn),
 		conn:              sdk.conn,
+		spClient:          sdk.spClient,
 		erasureCode:       sdk.streamingErasureCode,
 		maxConcurrency:    sdk.maxConcurrency,
 		blockPartSize:     sdk.blockPartSize,
@@ -164,6 +171,7 @@ func (sdk *SDK) IPC() (*IPC, error) {
 		blockPartSize:     sdk.blockPartSize,
 		useConnectionPool: sdk.useConnectionPool,
 		encryptionKey:     sdk.encryptionKey,
+		maxBlocksInChunk:  sdk.streamingMaxBlocksInChunk,
 	}
 
 	connParams, err := client.ConnectionParams(context.Background(), &pb.ConnectionParamsRequest{})
@@ -172,9 +180,9 @@ func (sdk *SDK) IPC() (*IPC, error) {
 	}
 
 	res.ipc, err = ipc.Dial(context.Background(), ipc.Config{
-		DialURI:         connParams.DialUri,
-		PrivateKey:      sdk.privateKey,
-		ContractAddress: connParams.ContractAddress,
+		DialURI:                connParams.DialUri,
+		PrivateKey:             sdk.privateKey,
+		StorageContractAddress: connParams.ContractAddress,
 	})
 	if err != nil {
 		return nil, err
