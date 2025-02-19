@@ -59,6 +59,10 @@ func ErrorHashToError(err error) error {
 				return errors.New("InvalidEncodedSize")
 			case "0xfe33db92":
 				return errors.New("InvalidFileCID")
+			case "0x37c7f255":
+				return errors.New("IndexMismatch")
+			case "0xcefa6b05":
+				return errors.New("NoPolicy")
 			default:
 				return err
 			}
@@ -73,7 +77,7 @@ func parseErrorsToHashes() []string {
 	errorsContract := []string{"BucketAlreadyExists()", "BucketInvalid()", "BucketInvalidOwner()", "BucketNonexists()", "BucketNonempty()",
 		"FileAlreadyExists()", "FileInvalid()", "FileNonexists()", "FileNonempty()", "FileNameDuplicate()", "FileFullyUploaded()", "FileChunkDuplicate()",
 		"BlockAlreadyExists()", "BlockInvalid()", "BlockNonexists()", "InvalidArrayLength(uint256 cidsLength, uint256 sizesLength)", "InvalidFileBlocksCount()",
-		"InvalidLastBlockSize()", "InvalidEncodedSize()", "InvalidFileCID()"}
+		"InvalidLastBlockSize()", "InvalidEncodedSize()", "InvalidFileCID()", "IndexMismatch()", "NoPolicy()"}
 
 	errHashes := make([]string, 0)
 

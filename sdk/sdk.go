@@ -182,7 +182,8 @@ func (sdk *SDK) IPC() (*IPC, error) {
 	res.ipc, err = ipc.Dial(context.Background(), ipc.Config{
 		DialURI:                connParams.DialUri,
 		PrivateKey:             sdk.privateKey,
-		StorageContractAddress: connParams.ContractAddress,
+		StorageContractAddress: connParams.StorageAddress,
+		AccessContractAddress:  connParams.AccessAddress,
 	})
 	if err != nil {
 		return nil, err
