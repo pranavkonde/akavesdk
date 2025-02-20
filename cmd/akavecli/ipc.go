@@ -408,7 +408,16 @@ func cmdFileUploadIPC(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("failed to get file info: %w", err)
 	}
 
-	akaveSDK, err := sdk.New(nodeRPCAddress, maxConcurrency, blockPartSize, useConnectionPool, sdk.WithPrivateKey(privateKey))
+	key, err := encryptionKeyBytes()
+	if err != nil {
+		return err
+	}
+
+	akaveSDK, err := sdk.New(nodeRPCAddress, maxConcurrency, blockPartSize, useConnectionPool,
+		sdk.WithPrivateKey(privateKey),
+		sdk.WithEncryptionKey(key),
+		sdk.WithErasureCoding(parityBlocks()),
+	)
 	if err != nil {
 		return err
 	}
@@ -454,7 +463,16 @@ func cmdFileDownloadIPC(cmd *cobra.Command, args []string) (err error) {
 	fileName := args[1]
 	destPath := args[2]
 
-	akaveSDK, err := sdk.New(nodeRPCAddress, maxConcurrency, blockPartSize, useConnectionPool, sdk.WithPrivateKey(privateKey))
+	key, err := encryptionKeyBytes()
+	if err != nil {
+		return err
+	}
+
+	akaveSDK, err := sdk.New(nodeRPCAddress, maxConcurrency, blockPartSize, useConnectionPool,
+		sdk.WithPrivateKey(privateKey),
+		sdk.WithEncryptionKey(key),
+		sdk.WithErasureCoding(parityBlocks()),
+	)
 	if err != nil {
 		return err
 	}

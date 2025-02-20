@@ -17,8 +17,6 @@ import (
 )
 
 var (
-	filecoinFlag bool
-
 	fileStreamingCmd = &cobra.Command{
 		Use:   "files-streaming",
 		Short: "Manage files in buckets using streaming API",
@@ -157,10 +155,6 @@ var (
 	}
 )
 
-func init() {
-	streamingFileDownloadCmd.Flags().BoolVar(&filecoinFlag, "filecoin", false, "downloads data from filecoin if they are already sealed there")
-}
-
 func cmdStreamingListFiles(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	defer mon.Task()(&ctx, args)(&err)
@@ -234,7 +228,15 @@ func cmdStreamingFileUpload(cmd *cobra.Command, args []string) (err error) {
 		}
 	}()
 
-	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockPartSize, useConnectionPool)
+	key, err := encryptionKeyBytes()
+	if err != nil {
+		return err
+	}
+
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockPartSize, useConnectionPool,
+		sdk.WithEncryptionKey(key),
+		sdk.WithErasureCoding(parityBlocks()),
+	)
 	if err != nil {
 		return err
 	}
@@ -273,9 +275,6 @@ func cmdStreamingFileUpload(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	cmd.PrintErrf("File uploaded successfully: Name=%s, RootCID=%s, Size=%d, TransferedSize=%d\n", fileName, info.RootCID, fi.Size(), info.EncodedSize)
-	if err != nil {
-		return fmt.Errorf("failed to upload file: %w", err)
-	}
 
 	return nil
 }
@@ -291,7 +290,15 @@ func cmdStreamingFileDownload(cmd *cobra.Command, args []string) (err error) {
 		rootCID = args[3]
 	}
 
-	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockPartSize, useConnectionPool)
+	key, err := encryptionKeyBytes()
+	if err != nil {
+		return err
+	}
+
+	sdk, err := sdk.New(nodeRPCAddress, maxConcurrency, blockPartSize, useConnectionPool,
+		sdk.WithEncryptionKey(key),
+		sdk.WithErasureCoding(parityBlocks()),
+	)
 	if err != nil {
 		return err
 	}
@@ -344,6 +351,7 @@ func cmdStreamingFileDownload(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	cmd.PrintErrf("File downloaded successfully: Name=%s, Path=%s, Size=%d, TransferedSize=%d\n", fileName, filepath.Join(destPath, fileName), writtenBytes, info.EncodedSize)
+
 	return nil
 }
 

@@ -151,6 +151,7 @@ type IPCFileMeta struct {
 	Name        string
 	BucketName  string
 	EncodedSize int64
+	IsPublic    bool
 	CreatedAt   time.Time
 }
 

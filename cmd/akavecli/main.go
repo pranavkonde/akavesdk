@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -108,9 +109,12 @@ var (
 
 	nodeRPCAddress    string
 	privateKey        string
+	encryptionKey     string
 	maxConcurrency    int
 	blockPartSize     int64
 	useConnectionPool bool
+	useErasureCoding  bool
+	filecoinFlag      bool
 
 	// tracing.
 	mon = monkit.Package()
@@ -171,6 +175,12 @@ func initFlags() {
 	rootCmd.PersistentFlags().Int64Var(&blockPartSize, "blockPartSize", (memory.KiB * 128).ToInt64(), "Size of each block part")
 	rootCmd.PersistentFlags().BoolVar(&useConnectionPool, "useConnectionPool", true, "Use connection pool")
 	ipcCmd.PersistentFlags().StringVar(&privateKey, "private-key", "", "Private key for signing IPC transactions")
+	streamingFileDownloadCmd.Flags().BoolVar(&filecoinFlag, "filecoin", false, "downloads data from filecoin if they are already sealed there")
+
+	for _, cmd := range []*cobra.Command{ipcFileUploadCmd, ipcFileDownloadCmd, streamingFileUploadCmd, streamingFileDownloadCmd} {
+		cmd.Flags().StringVarP(&encryptionKey, "encryption-key", "e", "", "Encryption key for encrypting file data")
+		cmd.Flags().BoolVar(&useErasureCoding, "erasure-coding", false, "Use erasure coding")
+	}
 }
 
 func initTracing(log *zap.Logger) (*mJaeger.ThriftCollector, func()) {
@@ -348,4 +358,19 @@ func cmdListBuckets(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	return nil
+}
+
+func encryptionKeyBytes() ([]byte, error) {
+	decodedKey, err := hex.DecodeString(encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode encryption key: %w", err)
+	}
+	return decodedKey, nil
+}
+
+func parityBlocks() int {
+	if useErasureCoding {
+		return 16
+	}
+	return 0
 }
