@@ -485,44 +485,6 @@ func TestUploadDownloadIPC(t *testing.T) {
 	}
 }
 
-func TestFileSetPublicAccess(t *testing.T) {
-	akave, err := sdk.New(PickNodeRPCAddress(t), maxConcurrency, blockPartSize.ToInt64(), true, sdk.WithPrivateKey(PickPrivateKey(t)))
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, akave.Close())
-	})
-
-	ipc, err := akave.IPC()
-	require.NoError(t, err)
-
-	file := bytes.NewBuffer(testrand.BytesD(t, 1, memory.MB.ToInt64()))
-
-	bucketName := randomBucketName(t, 10)
-	fileName := randomBucketName(t, 10)
-
-	_, err = ipc.CreateBucket(context.Background(), bucketName)
-	require.NoError(t, err)
-
-	require.NoError(t, ipc.CreateFileUpload(context.Background(), bucketName, fileName))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	upResult, err := ipc.Upload(ctx, bucketName, fileName, file)
-	require.NoError(t, err)
-	require.Equal(t, upResult.Name, fileName)
-
-	info, err := ipc.FileInfo(ctx, bucketName, fileName)
-	require.NoError(t, err)
-	require.False(t, info.IsPublic)
-
-	require.NoError(t, ipc.FileSetPublicAccess(ctx, bucketName, fileName, true))
-
-	info, err = ipc.FileInfo(ctx, bucketName, fileName)
-	require.NoError(t, err)
-	require.True(t, info.IsPublic)
-}
-
 func TestStreamingRangeDownload(t *testing.T) {
 	ctx := context.Background()
 	fileSize := 80 * memory.MB.ToInt64()

@@ -88,30 +88,30 @@ func Dial(ctx context.Context, config Config) (*Client, error) {
 }
 
 // DeployStorage deploys storage smart contract, returns it's client.
-func DeployStorage(ctx context.Context, config Config) (*Client, string, string, error) {
+func DeployStorage(ctx context.Context, config Config) (*Client, string, error) {
 	ethClient, err := ethclient.Dial(config.DialURI)
 	if err != nil {
-		return &Client{}, "", "", err
+		return &Client{}, "", err
 	}
 
 	privateKey, err := crypto.HexToECDSA(config.PrivateKey)
 	if err != nil {
-		return &Client{}, "", "", err
+		return &Client{}, "", err
 	}
 
 	chainID, err := ethClient.ChainID(ctx)
 	if err != nil {
-		return &Client{}, "", "", err
+		return &Client{}, "", err
 	}
 
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
 	if err != nil {
-		return &Client{}, "", "", err
+		return &Client{}, "", err
 	}
 
-	storageAddress, tx, storage, err := contracts.DeployStorage(auth, ethClient)
+	address, tx, storage, err := contracts.DeployStorage(auth, ethClient)
 	if err != nil {
-		return &Client{}, "", "", err
+		return &Client{}, "", err
 	}
 
 	client := &Client{
@@ -122,16 +122,15 @@ func DeployStorage(ctx context.Context, config Config) (*Client, string, string,
 	}
 
 	if err := client.WaitForTx(ctx, tx.Hash()); err != nil {
-		return &Client{}, "", "", err
+		return &Client{}, "", err
 	}
 
-	accessAddress, tx, accessManager, err := contracts.DeployAccessManager(auth, ethClient, storageAddress)
+	_, tx, client.AccessManager, err = contracts.DeployAccessManager(auth, ethClient, address)
 	if err != nil {
-		return &Client{}, "", "", err
+		return &Client{}, "", err
 	}
-	client.AccessManager = accessManager
 
-	return client, storageAddress.String(), accessAddress.String(), client.WaitForTx(ctx, tx.Hash())
+	return client, address.String(), client.WaitForTx(ctx, tx.Hash())
 }
 
 // WaitForTx block execution until transaction receipt is received or context is cancelled.
