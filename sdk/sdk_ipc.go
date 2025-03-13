@@ -161,7 +161,6 @@ func (sdk *IPC) FileInfo(ctx context.Context, bucketName string, fileName string
 		RootCID:     res.GetRootCid(),
 		Name:        res.GetFileName(),
 		BucketName:  res.GetBucketName(),
-		IsPublic:    res.GetIsPublic(),
 		EncodedSize: res.GetEncodedSize(),
 		CreatedAt:   res.CreatedAt.AsTime(),
 	}, nil
@@ -555,28 +554,6 @@ func (sdk *IPC) CreateFileDownload(ctx context.Context, bucketName string, fileN
 		Name:       fileName,
 		Chunks:     chunks,
 	}, nil
-}
-
-// FileSetPublicAccess change file status from/to public.
-func (sdk *IPC) FileSetPublicAccess(ctx context.Context, bucketName, fileName string, isPublic bool) (err error) {
-	defer mon.Task()(&ctx)(&err)
-
-	bucket, err := sdk.ipc.Storage.GetBucketByName(&bind.CallOpts{From: sdk.ipc.Auth.From}, bucketName)
-	if err != nil {
-		return errSDK.Wrap(err)
-	}
-
-	file, err := sdk.ipc.Storage.GetFileByName(&bind.CallOpts{}, bucket.Id, fileName)
-	if err != nil {
-		return errSDK.Wrap(err)
-	}
-
-	tx, err := sdk.ipc.AccessManager.ChangePublicAccess(sdk.ipc.Auth, file.Id, isPublic)
-	if err != nil {
-		return errSDK.Wrap(err)
-	}
-
-	return errSDK.Wrap(sdk.ipc.WaitForTx(ctx, tx.Hash()))
 }
 
 // Download downloads a file using ipc api.
