@@ -202,6 +202,7 @@ func (sdk *IPC) FileInfo(ctx context.Context, bucketName, fileName string) (_ IP
 		BucketName:  res.GetBucketName(),
 		IsPublic:    res.GetIsPublic(),
 		EncodedSize: res.GetEncodedSize(),
+		ActualSize:  res.GetActualSize(),
 		CreatedAt:   res.CreatedAt.AsTime(),
 	}, nil
 }
@@ -233,6 +234,7 @@ func (sdk *IPC) ListFiles(ctx context.Context, bucketName string) (_ []IPCFileLi
 			RootCID:     fileMeta.GetRootCid(),
 			Name:        fileMeta.GetName(),
 			EncodedSize: fileMeta.GetEncodedSize(),
+			ActualSize:  fileMeta.GetActualSize(),
 			CreatedAt:   fileMeta.GetCreatedAt().AsTime(),
 		})
 	}
@@ -400,6 +402,7 @@ func (sdk *IPC) Upload(ctx context.Context, bucketName, fileName string, reader 
 	})
 
 	var fileSize int64
+	var actualFileSize int64
 	var chunkCount int64
 
 uploadLoop:
@@ -421,6 +424,7 @@ uploadLoop:
 			}
 
 			fileSize += int64(chunkUpload.ProtoNodeSize)
+			actualFileSize += chunkUpload.ActualSize
 			chunkCount++
 		}
 	}
@@ -451,7 +455,7 @@ uploadLoop:
 		time.Sleep(time.Second) // TODO: make configurable
 	}
 
-	tx, err := sdk.ipc.Storage.CommitFile(sdk.ipc.Auth, bucket.Id, fileName, new(big.Int).SetInt64(fileSize), rootCID.Bytes())
+	tx, err := sdk.ipc.Storage.CommitFile(sdk.ipc.Auth, bucket.Id, fileName, big.NewInt(fileSize), big.NewInt(actualFileSize), rootCID.Bytes())
 	if err != nil {
 		return IPCFileMetaV2{}, errSDK.Wrap(ipc.ErrorHashToError(err))
 	}
@@ -519,8 +523,8 @@ func (sdk *IPC) createChunkUpload(ctx context.Context, index int64, fileEncrypti
 		chunkDAG.Blocks[i].Permit = upload.Permit
 	}
 
-	tx, err := sdk.ipc.Storage.AddFileChunk(sdk.ipc.Auth, chunkDAG.CID.Bytes(), bucketID, fileName, new(big.Int).SetInt64(int64(chunkDAG.ProtoNodeSize)),
-		cids, sizes, new(big.Int).SetInt64(index))
+	tx, err := sdk.ipc.Storage.AddFileChunk(sdk.ipc.Auth, chunkDAG.CID.Bytes(), bucketID, fileName, big.NewInt(int64(chunkDAG.ProtoNodeSize)),
+		cids, sizes, big.NewInt(index))
 	if err != nil {
 		return IPCFileChunkUploadV2{}, errSDK.Wrap(ipc.ErrorHashToError(err))
 	}
@@ -722,7 +726,7 @@ func (sdk *IPC) uploadIPCBlockSegments(ctx context.Context, block *pb.IPCFileBlo
 func (sdk *IPC) CreateFileDownload(ctx context.Context, bucketName, fileName string) (_ IPCFileDownload, innerErr error) {
 	defer mon.Task()(&ctx, bucketName, fileName)(&innerErr)
 	if bucketName == "" {
-		return IPCFileDownload{}, errSDK.Errorf("empty bucket id")
+		return IPCFileDownload{}, errSDK.Errorf("empty bucket name")
 	}
 	if fileName == "" {
 		return IPCFileDownload{}, errSDK.Errorf("empty file name")
@@ -753,6 +757,54 @@ func (sdk *IPC) CreateFileDownload(ctx context.Context, bucketName, fileName str
 			EncodedSize: chunk.EncodedSize,
 			Size:        chunk.Size,
 			Index:       int64(i),
+		}
+	}
+
+	return IPCFileDownload{
+		BucketName: res.BucketName,
+		Name:       fileName,
+		Chunks:     chunks,
+	}, nil
+}
+
+// CreateRangeFileDownload creates a new download request with block ranges.
+func (sdk *IPC) CreateRangeFileDownload(ctx context.Context, bucketName, fileName string, start, end int64) (_ IPCFileDownload, err error) {
+	defer mon.Task()(&ctx, bucketName, fileName, start, end)(&err)
+
+	if bucketName == "" {
+		return IPCFileDownload{}, errSDK.Errorf("empty bucket name")
+	}
+	if fileName == "" {
+		return IPCFileDownload{}, errSDK.Errorf("empty file name")
+	}
+
+	fileName, err = sdk.maybeEncryptMetadata(fileName, bucketName+"/"+fileName)
+	if err != nil {
+		return IPCFileDownload{}, errSDK.Wrap(err)
+	}
+	bucketName, err = sdk.maybeEncryptMetadata(bucketName, bucketName)
+	if err != nil {
+		return IPCFileDownload{}, errSDK.Wrap(err)
+	}
+
+	res, err := sdk.client.FileDownloadRangeCreate(ctx, &pb.IPCFileDownloadRangeCreateRequest{
+		BucketName: bucketName,
+		FileName:   fileName,
+		Address:    sdk.ipc.Auth.From.String(),
+		StartIndex: start,
+		EndIndex:   end,
+	})
+	if err != nil {
+		return IPCFileDownload{}, errSDK.Wrap(err)
+	}
+
+	chunks := make([]Chunk, len(res.Chunks))
+	for i, chunk := range res.Chunks {
+		chunks[i] = Chunk{
+			CID:         chunk.Cid,
+			EncodedSize: chunk.EncodedSize,
+			Size:        chunk.Size,
+			Index:       int64(i) + start,
 		}
 	}
 
@@ -1027,7 +1079,7 @@ func toIPCProtoChunk(chunkCid string, index, size int64, blocks []FileBlockUploa
 
 		copy(bcid[:], c.Bytes()[4:])
 		cids = append(cids, bcid)
-		sizes = append(sizes, new(big.Int).SetInt64(int64(len(block.Data))))
+		sizes = append(sizes, big.NewInt(int64(len(block.Data))))
 	}
 	return cids, sizes, &pb.IPCChunk{
 		Cid:    chunkCid,
